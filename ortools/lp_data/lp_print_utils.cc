@@ -12,7 +12,6 @@
 // limitations under the License.
 
 #include "ortools/lp_data/lp_print_utils.h"
-
 #include <cmath>
 #include <cstdio>
 #include <limits>

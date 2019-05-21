@@ -1,16 +1,31 @@
-# ortools.sat.python.cp_model
-Methods for building and solving CP-SAT models.
-## DisplayBounds
+| [home](README.md) | [boolean logic](boolean_logic.md) | [integer arithmetic](integer_arithmetic.md) | [channeling constraints](channeling.md) | [scheduling](scheduling.md) | [Using the CP-SAT solver](solver.md) | [Reference manual](reference.md) |
+| ----------------- | --------------------------------- | ------------------------------------------- | --------------------------------------- | --------------------------- | ------------------------------------ | -------------------------------- |
+
+
+<h1 id="ortools.sat.python">ortools.sat.python</h1>
+
+
+<h1 id="ortools.sat.python.cp_model">ortools.sat.python.cp_model</h1>
+
+Propose a natural language on top of cp_model_pb2 python proto.
+
+This file implements a easy-to-use API on top of the cp_model_pb2 protobuf
+defined in ../ .
+
+<h2 id="ortools.sat.python.cp_model.DisplayBounds">DisplayBounds</h2>
+
 ```python
 DisplayBounds(bounds)
 ```
 Displays a flattened list of intervals.
-## ShortName
+<h2 id="ortools.sat.python.cp_model.ShortName">ShortName</h2>
+
 ```python
 ShortName(model, i)
 ```
 Returns a short name of an integer variable, or its negation.
-## LinearExpression
+<h2 id="ortools.sat.python.cp_model.LinearExpression">LinearExpression</h2>
+
 ```python
 LinearExpression(self, /, *args, **kwargs)
 ```
@@ -32,14 +47,16 @@ Linear expressions can also be used to specify the objective of the model.
 
     model.Minimize(x + 2 * y + z)
 
-### GetVarValueMap
+<h3 id="ortools.sat.python.cp_model.LinearExpression.GetVarValueMap">GetVarValueMap</h3>
+
 ```python
 LinearExpression.GetVarValueMap(self)
 ```
 Scan the expression, and return a list of (var_coef_map, constant).
-## IntVar
+<h2 id="ortools.sat.python.cp_model.IntVar">IntVar</h2>
+
 ```python
-IntVar(self, model, domain, name)
+IntVar(self, model, bounds, name)
 ```
 An integer variable.
 
@@ -53,17 +70,8 @@ Solving a model is equivalent to finding, for each variable, a single value
 from the set of initial values (called the initial domain), such that the
 model is feasible, or optimal if you provided an objective function.
 
-### Index
-```python
-IntVar.Index(self)
-```
-Returns the index of the variable in the model.
-### Proto
-```python
-IntVar.Proto(self)
-```
-Returns the variable protobuf.
-### Not
+<h3 id="ortools.sat.python.cp_model.IntVar.Not">Not</h3>
+
 ```python
 IntVar.Not(self)
 ```
@@ -74,7 +82,8 @@ It is only valid of the variable has a Boolean domain (0 or 1).
 
 Note that this method is nilpotent: x.Not().Not() == x.
 
-## LinearInequality
+<h2 id="ortools.sat.python.cp_model.LinearInequality">LinearInequality</h2>
+
 ```python
 LinearInequality(self, expr, bounds)
 ```
@@ -85,7 +94,8 @@ CpModel.Add(expression), as in:
 
     model.Add(x + 2 * y -1 >= z)
 
-## Constraint
+<h2 id="ortools.sat.python.cp_model.Constraint">Constraint</h2>
+
 ```python
 Constraint(self, constraints)
 ```
@@ -102,7 +112,8 @@ for this constraint.
 
     model.Add(x + 2 * y == 5).OnlyEnforceIf(b.Not())
 
-### OnlyEnforceIf
+<h3 id="ortools.sat.python.cp_model.Constraint.OnlyEnforceIf">OnlyEnforceIf</h3>
+
 ```python
 Constraint.OnlyEnforceIf(self, boolvar)
 ```
@@ -121,20 +132,11 @@ implication, so if the conjunction is true, it implies that the constraint
 must be enforced. If it is false, then the constraint is ignored.
 
 The following constraints support enforcement literals:
-   bool or, bool and, and any linear constraints support any number of
-   enforcement literals.
+bool or, bool and, and any linear constraints support any number of
+enforcement literals.
 
-### Index
-```python
-Constraint.Index(self)
-```
-Returns the index of the constraint in the model.
-### Proto
-```python
-Constraint.Proto(self)
-```
-Returns the constraint protobuf.
-## IntervalVar
+<h2 id="ortools.sat.python.cp_model.IntervalVar">IntervalVar</h2>
+
 ```python
 IntervalVar(self, model, start_index, size_index, end_index, is_present_index, name)
 ```
@@ -154,65 +156,72 @@ These constraints ignore interval variables with enforcement literals assigned
 to false. Conversely, these constraints will also set these enforcement
 literals to false if they cannot fit these intervals into the schedule.
 
-### Index
-```python
-IntervalVar.Index(self)
-```
-Returns the index of the interval constraint in the model.
-### Proto
-```python
-IntervalVar.Proto(self)
-```
-Returns the interval protobuf.
-## CpModel
+<h2 id="ortools.sat.python.cp_model.CpModel">CpModel</h2>
+
 ```python
 CpModel(self)
 ```
-Methods for building a CP model.
+Wrapper class around the cp_model proto.
 
-Methods beginning with:
-* ```New``` create integer, boolean, or interval variables.
-* ```Add``` create new constraints and add them to the model.
+This class provides two types of methods:
+    - NewXXX to create integer, boolean, or interval variables.
+    - AddXXX to create new constraints and add them to the model.
 
-### NewIntVar
+<h3 id="ortools.sat.python.cp_model.CpModel.NewIntVar">NewIntVar</h3>
+
 ```python
 CpModel.NewIntVar(self, lb, ub, name)
 ```
-Create an integer variable with domain [lb, ub].
-### NewIntVarFromDomain
+Creates an integer variable with domain [lb, ub].
+<h3 id="ortools.sat.python.cp_model.CpModel.NewEnumeratedIntVar">NewEnumeratedIntVar</h3>
+
 ```python
-CpModel.NewIntVarFromDomain(self, domain, name)
+CpModel.NewEnumeratedIntVar(self, bounds, name)
 ```
-Create an integer variable from a list of intervals.
+Creates an integer variable with an enumerated domain.
 
 Args:
-    domain: A instance of the Domain class.
+    bounds: A flattened list of disjoint intervals.
     name: The name of the variable.
 
 Returns:
-    a variable whose domain is the given domain.
+    a variable whose domain is union[bounds[2*i]..bounds[2*i + 1]].
 
-### NewBoolVar
+To create a variable with domain [1, 2, 3, 5, 7, 8], pass in the
+array [1, 3, 5, 5, 7, 8].
+
+<h3 id="ortools.sat.python.cp_model.CpModel.NewBoolVar">NewBoolVar</h3>
+
 ```python
 CpModel.NewBoolVar(self, name)
 ```
 Creates a 0-1 variable with the given name.
-### AddLinearConstraint
+<h3 id="ortools.sat.python.cp_model.CpModel.AddLinearConstraint">AddLinearConstraint</h3>
+
 ```python
-CpModel.AddLinearConstraint(self, linear_expr, lb, ub)
+CpModel.AddLinearConstraint(self, terms, lb, ub)
 ```
-Adds the constraint: lb <= linear_expr <= ub.
-### AddLinearExpressionInDomain
+Adds the constraints lb <= sum(terms) <= ub, where term = (var, coef).
+<h3 id="ortools.sat.python.cp_model.CpModel.AddSumConstraint">AddSumConstraint</h3>
+
 ```python
-CpModel.AddLinearExpressionInDomain(self, linear_expr, domain)
+CpModel.AddSumConstraint(self, variables, lb, ub)
 ```
-Add the constraint: linear_expr in domain.
-### Add
+Adds the constraints lb <= sum(variables) <= ub.
+<h3 id="ortools.sat.python.cp_model.CpModel.AddLinearConstraintWithBounds">AddLinearConstraintWithBounds</h3>
+
+```python
+CpModel.AddLinearConstraintWithBounds(self, terms, bounds)
+```
+Adds the constraints sum(terms) in bounds, where term = (var, coef).
+<h3 id="ortools.sat.python.cp_model.CpModel.Add">Add</h3>
+
 ```python
 CpModel.Add(self, ct)
 ```
 Adds a LinearInequality to the model.
-### AddAllDifferent
+<h3 id="ortools.sat.python.cp_model.CpModel.AddAllDifferent">AddAllDifferent</h3>
+
 ```python
 CpModel.AddAllDifferent(self, variables)
 ```
@@ -221,17 +230,19 @@ Adds AllDifferent(variables).
 This constraint forces all variables to have different values.
 
 Args:
-  variables: a list of integer variables.
+    variables: a list of integer variables.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
-### AddElement
+<h3 id="ortools.sat.python.cp_model.CpModel.AddElement">AddElement</h3>
+
 ```python
 CpModel.AddElement(self, index, variables, target)
 ```
 Adds the element constraint: variables[index] == target.
-### AddCircuit
+<h3 id="ortools.sat.python.cp_model.CpModel.AddCircuit">AddCircuit</h3>
+
 ```python
 CpModel.AddCircuit(self, arcs)
 ```
@@ -245,18 +256,19 @@ loop arc 'i -> i' associated with a true literal. Otherwise
 this constraint will fail.
 
 Args:
-  arcs: a list of arcs. An arc is a tuple (source_node, destination_node,
+arcs: a list of arcs. An arc is a tuple (source_node, destination_node,
     literal). The arc is selected in the circuit if the literal is true.
     Both source_node and destination_node must be integer value between 0
     and the number of nodes - 1.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
 Raises:
-  ValueError: If the list of arc is empty.
+    ValueError: If the list of arc is empty.
 
-### AddAllowedAssignments
+<h3 id="ortools.sat.python.cp_model.CpModel.AddAllowedAssignments">AddAllowedAssignments</h3>
+
 ```python
 CpModel.AddAllowedAssignments(self, variables, tuples_list)
 ```
@@ -268,20 +280,21 @@ corresponding list of values is equal to one of the tuple of the
 tuple_list.
 
 Args:
-  variables: A list of variables.
-  tuples_list: A list of admissible tuples. Each tuple must have the same
-    length as the variables, and the ith value of a tuple corresponds to the
-    ith variable.
+    variables: A list of variables.
+    tuples_list: A list of admissible tuples. Each tuple must have the same
+        length as the variables, and the ith value of a tuple corresponds to the
+        ith variable.
 
 Returns:
-  An instance of the Constraint class.
+      An instance of the Constraint class.
 
 Raises:
-  TypeError: If a tuple does not have the same size as the list of
-      variables.
-  ValueError: If the array of variables is empty.
+    TypeError: If a tuple does not have the same size as the list of
+        variables.
+    ValueError: If the array of variables is empty.
 
-### AddForbiddenAssignments
+<h3 id="ortools.sat.python.cp_model.CpModel.AddForbiddenAssignments">AddForbiddenAssignments</h3>
+
 ```python
 CpModel.AddForbiddenAssignments(self, variables, tuples_list)
 ```
@@ -291,20 +304,21 @@ A ForbiddenAssignments constraint is a constraint on an array of variables
 where the list of impossible combinations is provided in the tuples list.
 
 Args:
-  variables: A list of variables.
-  tuples_list: A list of forbidden tuples. Each tuple must have the same
-    length as the variables, and the ith value of a tuple corresponds to the
-    ith variable.
+    variables: A list of variables.
+    tuples_list: A list of forbidden tuples. Each tuple must have the same
+        length as the variables, and the ith value of a tuple corresponds to the
+        ith variable.
 
 Returns:
-  An instance of the Constraint class.
+      An instance of the Constraint class.
 
 Raises:
-  TypeError: If a tuple does not have the same size as the list of
-             variables.
-  ValueError: If the array of variables is empty.
+    TypeError: If a tuple does not have the same size as the list of
+                variables.
+    ValueError: If the array of variables is empty.
 
-### AddAutomaton
+<h3 id="ortools.sat.python.cp_model.CpModel.AddAutomaton">AddAutomaton</h3>
+
 ```python
 CpModel.AddAutomaton(self, transition_variables, starting_state, final_states, transition_triples)
 ```
@@ -316,7 +330,7 @@ triplet ('tail', 'transition', 'head'), where 'tail' and 'head' are states,
 and 'transition' is the label of an arc from 'head' to 'tail',
 corresponding to the value of one variable in the list of variables.
 
-This automaton will be unrolled into a flow with n + 1 phases. Each phase
+This automata will be unrolled into a flow with n + 1 phases. Each phase
 contains the possible states of the automaton. The first state contains the
 initial state. The last phase contains the final states.
 
@@ -333,21 +347,22 @@ the values of the variables that ends in one of the final states in the
 final phase.
 
 Args:
-  transition_variables: A non empty list of variables whose values
-    correspond to the labels of the arcs traversed by the automaton.
-  starting_state: The initial state of the automaton.
-  final_states: A non empty list of admissible final states.
-  transition_triples: A list of transition for the automaton, in the
-    following format (current_state, variable_value, next_state).
+    transition_variables: A non empty list of variables whose values
+        correspond to the labels of the arcs traversed by the automata.
+    starting_state: The initial state of the automata.
+    final_states: A non empty list of admissible final states.
+    transition_triples: A list of transition for the automata, in the
+        following format (current_state, variable_value, next_state).
 
 Returns:
-  An instance of the Constraint class.
+      An instance of the Constraint class.
 
 Raises:
-  ValueError: if transition_variables, final_states, or transition_triples
-  are empty.
+    ValueError: if transition_variables, final_states, or transition_triples
+        are empty.
 
-### AddInverse
+<h3 id="ortools.sat.python.cp_model.CpModel.AddInverse">AddInverse</h3>
+
 ```python
 CpModel.AddInverse(self, variables, inverse_variables)
 ```
@@ -357,17 +372,18 @@ An inverse constraint enforces that if 'variables[i]' is assigned a value
 'j', then inverse_variables[j] is assigned a value 'i'. And vice versa.
 
 Args:
-  variables: An array of integer variables.
-  inverse_variables: An array of integer variables.
+    variables: An array of integer variables.
+    inverse_variables: An array of integer variables.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
 Raises:
-  TypeError: if variables and inverse_variables have different length, or
-      if they are empty.
+    TypeError: if variables and inverse_variables have different length, or
+        if they are empty.
 
-### AddReservoirConstraint
+<h3 id="ortools.sat.python.cp_model.CpModel.AddReservoirConstraint">AddReservoirConstraint</h3>
+
 ```python
 CpModel.AddReservoirConstraint(self, times, demands, min_level, max_level)
 ```
@@ -385,22 +401,23 @@ bounds with the executed demands. Therefore, at any time t >= 0:
     sum(demands[i] if times[i] <= t) in [min_level, max_level]
 
 Args:
-  times: A list of positive integer variables which specify the time of the
-    filling or emptying the reservoir.
-  demands: A list of integer values that specifies the amount of the
-    emptying or feeling.
-  min_level: At any time >= 0, the level of the reservoir must be greater of
-    equal than the min level.
-  max_level: At any time >= 0, the level of the reservoir must be less or
-    equal than the max level.
+    times: A list of positive integer variables which specify the time of the
+        filling or emptying the reservoir.
+    demands: A list of integer values that specifies the amount of the
+        emptying or feeling.
+    min_level: At any time >= 0, the level of the reservoir must be greater of
+        equal than the min level.
+    max_level: At any time >= 0, the level of the reservoir must be less or
+        equal than the max level.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
 Raises:
-  ValueError: if max_level < min_level.
+    ValueError: if max_level < min_level.
 
-### AddReservoirConstraintWithActive
+<h3 id="ortools.sat.python.cp_model.CpModel.AddReservoirConstraintWithActive">AddReservoirConstraintWithActive</h3>
+
 ```python
 CpModel.AddReservoirConstraintWithActive(self, times, demands, actives, min_level, max_level)
 ```
@@ -421,79 +438,91 @@ The array of boolean variables 'actives', if defined, indicates which
 actions are actually performed.
 
 Args:
-  times: A list of positive integer variables which specify the time of the
-    filling or emptying the reservoir.
-  demands: A list of integer values that specifies the amount of the
-    emptying or feeling.
-  actives: a list of boolean variables. They indicates if the
-    emptying/refilling events actually take place.
-  min_level: At any time >= 0, the level of the reservoir must be greater of
-    equal than the min level.
-  max_level: At any time >= 0, the level of the reservoir must be less or
-    equal than the max level.
+    times: A list of positive integer variables which specify the time of
+        the filling or emptying the reservoir.
+    demands: A list of integer values that specifies the amount of the
+        emptying or feeling.
+    actives: a list of boolean variables. They indicates if the
+        emptying/refilling events actually take place.
+    min_level: At any time >= 0, the level of the reservoir must be greater
+        of equal than the min level.
+    max_level: At any time >= 0, the level of the reservoir must be less or
+        equal than the max level.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
 Raises:
-  ValueError: if max_level < min_level.
+    ValueError: if max_level < min_level.
 
-### AddMapDomain
+<h3 id="ortools.sat.python.cp_model.CpModel.AddMapDomain">AddMapDomain</h3>
+
 ```python
 CpModel.AddMapDomain(self, var, bool_var_array, offset=0)
 ```
 Adds var == i + offset <=> bool_var_array[i] == true for all i.
-### AddImplication
+<h3 id="ortools.sat.python.cp_model.CpModel.AddImplication">AddImplication</h3>
+
 ```python
 CpModel.AddImplication(self, a, b)
 ```
 Adds a => b.
-### AddBoolOr
+<h3 id="ortools.sat.python.cp_model.CpModel.AddBoolOr">AddBoolOr</h3>
+
 ```python
 CpModel.AddBoolOr(self, literals)
 ```
 Adds Or(literals) == true.
-### AddBoolAnd
+<h3 id="ortools.sat.python.cp_model.CpModel.AddBoolAnd">AddBoolAnd</h3>
+
 ```python
 CpModel.AddBoolAnd(self, literals)
 ```
 Adds And(literals) == true.
-### AddBoolXOr
+<h3 id="ortools.sat.python.cp_model.CpModel.AddBoolXOr">AddBoolXOr</h3>
+
 ```python
 CpModel.AddBoolXOr(self, literals)
 ```
 Adds XOr(literals) == true.
-### AddMinEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddMinEquality">AddMinEquality</h3>
+
 ```python
 CpModel.AddMinEquality(self, target, variables)
 ```
 Adds target == Min(variables).
-### AddMaxEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddMaxEquality">AddMaxEquality</h3>
+
 ```python
 CpModel.AddMaxEquality(self, target, args)
 ```
 Adds target == Max(variables).
-### AddDivisionEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddDivisionEquality">AddDivisionEquality</h3>
+
 ```python
 CpModel.AddDivisionEquality(self, target, num, denom)
 ```
 Adds target == num // denom.
-### AddAbsEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddAbsEquality">AddAbsEquality</h3>
+
 ```python
 CpModel.AddAbsEquality(self, target, var)
 ```
 Adds target == Abs(var).
-### AddModuloEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddModuloEquality">AddModuloEquality</h3>
+
 ```python
 CpModel.AddModuloEquality(self, target, var, mod)
 ```
 Adds target = var % mod.
-### AddProdEquality
+<h3 id="ortools.sat.python.cp_model.CpModel.AddProdEquality">AddProdEquality</h3>
+
 ```python
 CpModel.AddProdEquality(self, target, args)
 ```
 Adds target == PROD(args).
-### NewIntervalVar
+<h3 id="ortools.sat.python.cp_model.CpModel.NewIntervalVar">NewIntervalVar</h3>
+
 ```python
 CpModel.NewIntervalVar(self, start, size, end, name)
 ```
@@ -505,18 +534,19 @@ constraints like NoOverlap.
 Internally, it ensures that start + size == end.
 
 Args:
-  start: The start of the interval. It can be an integer value, or an
-    integer variable.
-  size: The size of the interval. It can be an integer value, or an integer
-    variable.
-  end: The end of the interval. It can be an integer value, or an integer
-    variable.
-  name: The name of the interval variable.
+    start: The start of the interval. It can be an integer value, or an
+        integer variable.
+    size: The size of the interval. It can be an integer value, or an
+        integer variable.
+    end: The end of the interval. It can be an integer value, or an
+        integer variable.
+    name: The name of the interval variable.
 
 Returns:
-  An IntervalVar object.
+    An IntervalVar object.
 
-### NewOptionalIntervalVar
+<h3 id="ortools.sat.python.cp_model.CpModel.NewOptionalIntervalVar">NewOptionalIntervalVar</h3>
+
 ```python
 CpModel.NewOptionalIntervalVar(self, start, size, end, is_present, name)
 ```
@@ -529,20 +559,21 @@ literal that indicates if it is active or not.
 Internally, it ensures that is_present implies start + size == end.
 
 Args:
-  start: The start of the interval. It can be an integer value, or an
-    integer variable.
-  size: The size of the interval. It can be an integer value, or an integer
-    variable.
-  end: The end of the interval. It can be an integer value, or an integer
-    variable.
-  is_present: A literal that indicates if the interval is active or not. A
-    inactive interval is simply ignored by all constraints.
-  name: The name of the interval variable.
+    start: The start of the interval. It can be an integer value, or an
+        integer variable.
+    size: The size of the interval. It can be an integer value, or an
+        integer variable.
+    end: The end of the interval. It can be an integer value, or an
+        integer variable.
+    is_present: A literal that indicates if the interval is active or
+        not. A inactive interval is simply ignored by all constraints.
+    name: The name of the interval variable.
 
 Returns:
-  An IntervalVar object.
+    An IntervalVar object.
 
-### AddNoOverlap
+<h3 id="ortools.sat.python.cp_model.CpModel.AddNoOverlap">AddNoOverlap</h3>
+
 ```python
 CpModel.AddNoOverlap(self, interval_vars)
 ```
@@ -552,12 +583,13 @@ A NoOverlap constraint ensures that all present intervals do not overlap
 in time.
 
 Args:
-  interval_vars: The list of interval variables to constrain.
+    interval_vars: The list of interval variables to constrain.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
-### AddNoOverlap2D
+<h3 id="ortools.sat.python.cp_model.CpModel.AddNoOverlap2D">AddNoOverlap2D</h3>
+
 ```python
 CpModel.AddNoOverlap2D(self, x_intervals, y_intervals)
 ```
@@ -568,94 +600,101 @@ on a plan. Each rectangle is aligned with the X and Y axis, and is defined
 by two intervals which represent its projection onto the X and Y axis.
 
 Args:
-  x_intervals: The X coordinates of the rectangles.
-  y_intervals: The Y coordinates of the rectangles.
+    x_intervals: The X coordinates of the rectangles.
+    y_intervals: The Y coordinates of the rectangles.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
-### AddCumulative
+<h3 id="ortools.sat.python.cp_model.CpModel.AddCumulative">AddCumulative</h3>
+
 ```python
 CpModel.AddCumulative(self, intervals, demands, capacity)
 ```
 Adds Cumulative(intervals, demands, capacity).
 
 This constraint enforces that:
-  for all t:
+for all t:
     sum(demands[i]
         if (start(intervals[t]) <= t < end(intervals[t])) and
         (t is present)) <= capacity
 
 Args:
-  intervals: The list of intervals.
-  demands: The list of demands for each interval. Each demand must be >= 0.
-    Each demand can be an integer value, or an integer variable.
-  capacity: The maximum capacity of the cumulative constraint. It must be a
-    positive integer value or variable.
+    intervals: The list of intervals.
+    demands: The list of demands for each interval. Each demand must
+        be >= 0. Each demand can be an integer value, or an integer
+        variable.
+    capacity: The maximum capacity of the cumulative constraint. It
+        must be a positive integer value or variable.
 
 Returns:
-  An instance of the Constraint class.
+    An instance of the Constraint class.
 
-### Proto
-```python
-CpModel.Proto(self)
-```
-Returns the underling CpModelProto.
-### GetOrMakeIndex
+<h3 id="ortools.sat.python.cp_model.CpModel.GetOrMakeIndex">GetOrMakeIndex</h3>
+
 ```python
 CpModel.GetOrMakeIndex(self, arg)
 ```
 Returns the index of a variables, its negation, or a number.
-### GetOrMakeBooleanIndex
+<h3 id="ortools.sat.python.cp_model.CpModel.GetOrMakeBooleanIndex">GetOrMakeBooleanIndex</h3>
+
 ```python
 CpModel.GetOrMakeBooleanIndex(self, arg)
 ```
 Returns an index from a boolean expression.
-### Minimize
+<h3 id="ortools.sat.python.cp_model.CpModel.Minimize">Minimize</h3>
+
 ```python
 CpModel.Minimize(self, obj)
 ```
 Sets the objective of the model to minimize(obj).
-### Maximize
+<h3 id="ortools.sat.python.cp_model.CpModel.Maximize">Maximize</h3>
+
 ```python
 CpModel.Maximize(self, obj)
 ```
 Sets the objective of the model to maximize(obj).
-### AddDecisionStrategy
+<h3 id="ortools.sat.python.cp_model.CpModel.AddDecisionStrategy">AddDecisionStrategy</h3>
+
 ```python
 CpModel.AddDecisionStrategy(self, variables, var_strategy, domain_strategy)
 ```
 Adds a search strategy to the model.
 
 Args:
-  variables: a list of variables this strategy will assign.
-  var_strategy: heuristic to choose the next variable to assign.
-  domain_strategy: heuristic to reduce the domain of the selected variable.
-    Currently, this is advanced code, the union of all strategies added to
-    the model must be complete, i.e. instantiates all variables. Otherwise,
-    Solve() will fail.
+variables: a list of variables this strategy will assign.
+var_strategy: heuristic to choose the next variable to assign.
+domain_strategy: heuristic to reduce the domain of the selected variable.
+Currently, this is advanced code, the union of all strategies added to
+the model must be complete, i.e. instantiates all variables. Otherwise,
+Solve() will fail.
 
-### ModelStats
+<h3 id="ortools.sat.python.cp_model.CpModel.ModelStats">ModelStats</h3>
+
 ```python
 CpModel.ModelStats(self)
 ```
 Returns some statistics on the model as a string.
-### Validate
+<h3 id="ortools.sat.python.cp_model.CpModel.Validate">Validate</h3>
+
 ```python
 CpModel.Validate(self)
 ```
 Returns a string explaining the issue is the model is not valid.
-## EvaluateLinearExpression
+<h2 id="ortools.sat.python.cp_model.EvaluateLinearExpression">EvaluateLinearExpression</h2>
+
 ```python
 EvaluateLinearExpression(expression, solution)
 ```
 Evaluate an linear expression against a solution.
-## EvaluateBooleanExpression
+<h2 id="ortools.sat.python.cp_model.EvaluateBooleanExpression">EvaluateBooleanExpression</h2>
+
 ```python
 EvaluateBooleanExpression(literal, solution)
 ```
 Evaluate an boolean expression against a solution.
-## CpSolver
+<h2 id="ortools.sat.python.cp_model.CpSolver">CpSolver</h2>
+
 ```python
 CpSolver(self)
 ```
@@ -668,17 +707,20 @@ Once Solve() is called, this class allows inspecting the solution found
 with the Value() and BooleanValue() methods, as well as general statistics
 about the solve procedure.
 
-### Solve
+<h3 id="ortools.sat.python.cp_model.CpSolver.Solve">Solve</h3>
+
 ```python
 CpSolver.Solve(self, model)
 ```
 Solves the given model and returns the solve status.
-### SolveWithSolutionCallback
+<h3 id="ortools.sat.python.cp_model.CpSolver.SolveWithSolutionCallback">SolveWithSolutionCallback</h3>
+
 ```python
 CpSolver.SolveWithSolutionCallback(self, model, callback)
 ```
 Solves a problem and pass each solution found to the callback.
-### SearchForAllSolutions
+<h3 id="ortools.sat.python.cp_model.CpSolver.SearchForAllSolutions">SearchForAllSolutions</h3>
+
 ```python
 CpSolver.SearchForAllSolutions(self, model, callback)
 ```
@@ -687,76 +729,81 @@ Search for all solutions of a satisfiability problem.
 This method searches for all feasible solution of a given model.
 Then it feeds the solution to the callback.
 
-Note that the model cannot contain an objective.
-
 Args:
-  model: The model to solve.
-  callback: The callback that will be called at each solution.
+    model: The model to solve.
+    callback: The callback that will be called at each solution.
 
 Returns:
-  The status of the solve (FEASIBLE, INFEASIBLE...).
+    The status of the solve (FEASIBLE, INFEASIBLE...).
 
-### Value
+<h3 id="ortools.sat.python.cp_model.CpSolver.Value">Value</h3>
+
 ```python
 CpSolver.Value(self, expression)
 ```
 Returns the value of an linear expression after solve.
-### BooleanValue
+<h3 id="ortools.sat.python.cp_model.CpSolver.BooleanValue">BooleanValue</h3>
+
 ```python
 CpSolver.BooleanValue(self, literal)
 ```
 Returns the boolean value of a literal after solve.
-### ObjectiveValue
+<h3 id="ortools.sat.python.cp_model.CpSolver.ObjectiveValue">ObjectiveValue</h3>
+
 ```python
 CpSolver.ObjectiveValue(self)
 ```
 Returns the value of objective after solve.
-### BestObjectiveBound
+<h3 id="ortools.sat.python.cp_model.CpSolver.BestObjectiveBound">BestObjectiveBound</h3>
+
 ```python
 CpSolver.BestObjectiveBound(self)
 ```
 Returns the best lower (upper) bound found when min(max)imizing.
-### StatusName
+<h3 id="ortools.sat.python.cp_model.CpSolver.StatusName">StatusName</h3>
+
 ```python
 CpSolver.StatusName(self, status)
 ```
 Returns the name of the status returned by Solve().
-### NumBooleans
+<h3 id="ortools.sat.python.cp_model.CpSolver.NumBooleans">NumBooleans</h3>
+
 ```python
 CpSolver.NumBooleans(self)
 ```
 Returns the number of boolean variables managed by the SAT solver.
-### NumConflicts
+<h3 id="ortools.sat.python.cp_model.CpSolver.NumConflicts">NumConflicts</h3>
+
 ```python
 CpSolver.NumConflicts(self)
 ```
 Returns the number of conflicts since the creation of the solver.
-### NumBranches
+<h3 id="ortools.sat.python.cp_model.CpSolver.NumBranches">NumBranches</h3>
+
 ```python
 CpSolver.NumBranches(self)
 ```
 Returns the number of search branches explored by the solver.
-### WallTime
+<h3 id="ortools.sat.python.cp_model.CpSolver.WallTime">WallTime</h3>
+
 ```python
 CpSolver.WallTime(self)
 ```
 Returns the wall time in seconds since the creation of the solver.
-### UserTime
+<h3 id="ortools.sat.python.cp_model.CpSolver.UserTime">UserTime</h3>
+
 ```python
 CpSolver.UserTime(self)
 ```
 Returns the user time in seconds since the creation of the solver.
-### ResponseStats
+<h3 id="ortools.sat.python.cp_model.CpSolver.ResponseStats">ResponseStats</h3>
+
 ```python
 CpSolver.ResponseStats(self)
 ```
 Returns some statistics on the solution found as a string.
-### ResponseProto
-```python
-CpSolver.ResponseProto(self)
-```
-Returns the response object.
-## CpSolverSolutionCallback
+<h2 id="ortools.sat.python.cp_model.CpSolverSolutionCallback">CpSolverSolutionCallback</h2>
+
 ```python
 CpSolverSolutionCallback(self)
 ```
@@ -769,12 +816,14 @@ The method OnSolutionCallback() will be called by the solver, and must be
 implemented. The current solution can be queried using the BooleanValue()
 and Value() methods.
 
-### OnSolutionCallback
+<h3 id="ortools.sat.python.cp_model.CpSolverSolutionCallback.OnSolutionCallback">OnSolutionCallback</h3>
+
 ```python
 CpSolverSolutionCallback.OnSolutionCallback(self)
 ```
 Proxy to the same method in snake case.
-### BooleanValue
+<h3 id="ortools.sat.python.cp_model.CpSolverSolutionCallback.BooleanValue">BooleanValue</h3>
+
 ```python
 CpSolverSolutionCallback.BooleanValue(self, lit)
 ```
@@ -789,7 +838,8 @@ Returns:
 Raises:
     RuntimeError: if 'lit' is not a boolean variable or its negation.
 
-### Value
+<h3 id="ortools.sat.python.cp_model.CpSolverSolutionCallback.Value">Value</h3>
+
 ```python
 CpSolverSolutionCallback.Value(self, expression)
 ```
@@ -805,12 +855,14 @@ Returns:
 Raises:
     RuntimeError: if 'expression' is not a LinearExpression.
 
-## ObjectiveSolutionPrinter
+<h2 id="ortools.sat.python.cp_model.ObjectiveSolutionPrinter">ObjectiveSolutionPrinter</h2>
+
 ```python
 ObjectiveSolutionPrinter(self)
 ```
 Print intermediate solutions objective and time.
-### on_solution_callback
+<h3 id="ortools.sat.python.cp_model.ObjectiveSolutionPrinter.on_solution_callback">on_solution_callback</h3>
+
 ```python
 ObjectiveSolutionPrinter.on_solution_callback(self)
 ```

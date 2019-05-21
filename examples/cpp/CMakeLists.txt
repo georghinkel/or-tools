@@ -13,8 +13,6 @@ endif()
 
 get_filename_component(PARENT_SOURCE_DIR ${PROJECT_SOURCE_DIR} DIRECTORY)
 
-include(GNUInstallDirs)
-
 foreach(EXECUTABLE
   costas_array_sat
   cvrp_disjoint_tw

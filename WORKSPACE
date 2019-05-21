@@ -1,46 +1,33 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 
-git_repository(
+#Import the gflags files.
+http_archive(
     name = "com_github_gflags_gflags",
-    commit = "e171aa2",  # release v2.2.2
-    remote = "https://github.com/gflags/gflags.git",
+    sha256 = "19713a36c9f32b33df59d1c79b4958434cb005b5b47dc5400a7a4b078111d9b5",
+    strip_prefix = "gflags-2.2.2",
+    urls = ["https://github.com/gflags/gflags/archive/v2.2.2.zip"],
 )
 
+#Import the glog files.
 git_repository(
     name = "com_github_glog_glog",
-    commit = "96a2f23",  # release v0.4.0
+    commit = "41f4bf9cbc3e8995d628b459f6a239df43c2b84a",
     remote = "https://github.com/google/glog.git",
 )
 
-git_repository(
-    name = "bazel_skylib",
-    commit = "3721d32",  # release 0.8.0
-    remote = "https://github.com/bazelbuild/bazel-skylib.git",
-)
-
-git_repository(
+http_archive(
     name = "com_google_protobuf",
-    commit = "f425b9f",
-#    commit = "6973c3a",  # release v3.7.1
-    remote = "https://github.com/protocolbuffers/protobuf.git",
+    sha256 = "9510dd2afc29e7245e9e884336f848c8a6600a14ae726adb6befdb4f786f0be2",
+    strip_prefix = "protobuf-3.6.1.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.6.1.3.zip"],
 )
 
-git_repository(
+http_archive(
     name = "com_google_protobuf_cc",
-    commit = "f425b9f",
-#    commit = "6973c3a",  # release v3.7.1
-    remote = "https://github.com/protocolbuffers/protobuf.git",
-)
-
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-# Load common dependencies.
-protobuf_deps()
-
-git_repository(
-    name = "com_google_absl",
-    commit = "bf29470",
-    remote = "https://github.com/abseil/abseil-cpp.git",
+    sha256 = "9510dd2afc29e7245e9e884336f848c8a6600a14ae726adb6befdb4f786f0be2",
+    strip_prefix = "protobuf-3.6.1.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.6.1.3.zip"],
 )
 
 http_archive(
@@ -48,6 +35,12 @@ http_archive(
     build_file = "//bazel:gtest.BUILD",
     strip_prefix = "googletest-release-1.8.0/googletest",
     url = "https://github.com/google/googletest/archive/release-1.8.0.zip",
+)
+
+git_repository(
+    name = "com_google_absl",
+    commit = "bf29470",
+    remote = "https://github.com/abseil/abseil-cpp.git",
 )
 
 http_archive(

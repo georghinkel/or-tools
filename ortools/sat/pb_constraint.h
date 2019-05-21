@@ -22,12 +22,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/bitset.h"
@@ -514,18 +514,15 @@ class UpperBoundedLinearConstraint {
 // propagation.
 class PbConstraints : public SatPropagator {
  public:
-  explicit PbConstraints(Model* model)
+  PbConstraints()
       : SatPropagator("PbConstraints"),
         conflicting_constraint_index_(-1),
         num_learned_constraint_before_cleanup_(0),
         constraint_activity_increment_(1.0),
-        parameters_(model->GetOrCreate<SatParameters>()),
         stats_("PbConstraints"),
         num_constraint_lookups_(0),
         num_inspected_constraint_literals_(0),
-        num_threshold_updates_(0) {
-    model->GetOrCreate<Trail>()->RegisterPropagator(this);
-  }
+        num_threshold_updates_(0) {}
   ~PbConstraints() override {
     IF_STATS_ENABLED({
       LOG(INFO) << stats_.StatString();
@@ -548,6 +545,11 @@ class PbConstraints : public SatPropagator {
       to_update_.resize(num_variables << 1);
       enqueue_helper_.reasons.resize(num_variables);
     }
+  }
+
+  // Parameter management.
+  void SetParameters(const SatParameters& parameters) {
+    parameters_ = parameters;
   }
 
   // Adds a constraint in canonical form to the set of managed constraints. Note
@@ -667,7 +669,7 @@ class PbConstraints : public SatPropagator {
   double constraint_activity_increment_;
 
   // Algorithm parameters.
-  SatParameters* parameters_;
+  SatParameters parameters_;
 
   // Some statistics.
   mutable StatsGroup stats_;

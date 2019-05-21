@@ -205,7 +205,6 @@ Literal IntegerEncoder::GetOrCreateAssociatedLiteral(IntegerLiteral i_lit) {
   ++num_created_variables_;
   const Literal literal(sat_solver_->NewBooleanVariable(), true);
   AssociateToIntegerLiteral(literal, new_lit);
-  CHECK(!sat_solver_->Assignment().LiteralIsAssigned(literal));
   return literal;
 }
 
@@ -219,25 +218,9 @@ Literal IntegerEncoder::GetOrCreateLiteralAssociatedToEquality(
     }
   }
 
-  // Check for trivial true/false literal to avoid creating variable for no
-  // reasons.
-  const Domain& domain = (*domains_)[var];
-  if (!domain.Contains(value.value())) {
-    AssociateToIntegerEqualValue(GetFalseLiteral(), var, value);
-    return GetFalseLiteral();
-  }
-  if (value == domain.Min() && value == domain.Max()) {
-    AssociateToIntegerEqualValue(GetTrueLiteral(), var, value);
-    return GetTrueLiteral();
-  }
-
   ++num_created_variables_;
   const Literal literal(sat_solver_->NewBooleanVariable(), true);
   AssociateToIntegerEqualValue(literal, var, value);
-
-  // TODO(user): on some problem the check below fail. We should probably
-  // make sure that we don't create extra fixed Boolean variable for no reason.
-  // CHECK(!sat_solver_->Assignment().LiteralIsAssigned(literal));
   return literal;
 }
 
@@ -1166,7 +1149,6 @@ bool IntegerTrail::EnqueueInternal(
 
   // Special case for level zero.
   if (integer_search_levels_.empty()) {
-    ++num_level_zero_enqueues_;
     vars_[i_lit.var].current_bound = i_lit.bound;
     integer_trail_[i_lit.var.value()].bound = i_lit.bound;
 
@@ -1612,7 +1594,6 @@ bool GenericLiteralWatcher::Propagate(Trail* trail) {
     std::deque<int>& queue = queue_by_priority_[priority];
     while (!queue.empty()) {
       const int id = queue.front();
-      current_id_ = id;
       queue.pop_front();
 
       // Before we propagate, make sure any reversible structure are up to date.

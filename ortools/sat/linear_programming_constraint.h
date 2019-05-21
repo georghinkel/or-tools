@@ -29,7 +29,6 @@
 #include "ortools/sat/linear_constraint.h"
 #include "ortools/sat/linear_constraint_manager.h"
 #include "ortools/sat/model.h"
-#include "ortools/sat/util.h"
 #include "ortools/util/rev.h"
 #include "ortools/util/time_limit.h"
 
@@ -148,11 +147,6 @@ class LinearProgrammingConstraint : public PropagatorInterface,
   // Tie-breaking is done using the variable natural order.
   std::function<LiteralIndex()> LPReducedCostAverageBranching();
 
-  // Average number of nonbasic variables with zero reduced costs.
-  double average_degeneracy() const {
-    return average_degeneracy_.CurrentAverage();
-  }
-
  private:
   // Reinitialize the LP from a potentially new set of constraints.
   // This fills all data structure and properly rescale the underlying LP.
@@ -203,9 +197,6 @@ class LinearProgrammingConstraint : public PropagatorInterface,
   // computations, true otherwise.
   bool FillExactDualRayReason();
 
-  // Returns number of non basic variables with zero reduced costs.
-  int64 CalculateDegeneracy() const;
-
   // From a set of row multipliers (at LP scale), scale them back to the CP
   // world and then make them integer (eventually multiplying them by a new
   // scaling factor returned in *scaling).
@@ -253,14 +244,6 @@ class LinearProgrammingConstraint : public PropagatorInterface,
   // Tests for possible overflow in the propagation of the given linear
   // constraint.
   bool PossibleOverflow(const LinearConstraint& constraint);
-
-  // Reduce the coefficient of the constraint so that we cannot have overflow
-  // in the propagation of the given linear constraint. Note that we may loose
-  // some strength by doing so.
-  //
-  // We make sure that any partial sum involving any variable value in their
-  // domain do not exceed 2 ^ max_pow.
-  void PreventOverflow(LinearConstraint* constraint, int max_pow = 62);
 
   // Fills integer_reason_ with the reason for the implied lower bound of the
   // given linear expression. We relax the reason if we have some slack.
@@ -386,9 +369,6 @@ class LinearProgrammingConstraint : public PropagatorInterface,
   std::vector<double> sum_cost_down_;
   std::vector<int> num_cost_up_;
   std::vector<int> num_cost_down_;
-
-  // Defined as average number of nonbasic variables with zero reduced costs.
-  IncrementalAverage average_degeneracy_;
 };
 
 // A class that stores which LP propagator is associated to each variable.

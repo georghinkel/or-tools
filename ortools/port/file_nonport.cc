@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ortools/base/file.h"
 #include "ortools/port/file.h"
+
+#include "ortools/base/file.h"
 
 namespace operations_research {
 

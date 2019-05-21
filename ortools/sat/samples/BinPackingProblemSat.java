@@ -15,7 +15,6 @@ import com.google.ortools.sat.CpModel;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverStatus;
 import com.google.ortools.sat.IntVar;
-import com.google.ortools.sat.LinearExpr;
 
 /** Solves a bin packing problem with the CP-SAT solver. */
 public class BinPackingProblemSat {
@@ -66,7 +65,7 @@ public class BinPackingProblemSat {
       for (int i = 0; i < numItems; ++i) {
         vars[i] = x[i][b];
       }
-      model.addEquality(LinearExpr.scalProd(vars, sizes), load[b]);
+      model.addScalProdEqual(vars, sizes, load[b]);
     }
 
     // Place all items.
@@ -75,7 +74,7 @@ public class BinPackingProblemSat {
       for (int b = 0; b < numBins; ++b) {
         vars[b] = x[i][b];
       }
-      model.addEquality(LinearExpr.sum(vars), items[i][1]);
+      model.addLinearSumEqual(vars, items[i][1]);
     }
 
     // Links load and slack.
@@ -88,7 +87,7 @@ public class BinPackingProblemSat {
     }
 
     // Maximize sum of slacks.
-    model.maximize(LinearExpr.sum(slacks));
+    model.maximizeSum(slacks);
 
     // Solves and prints out the solution.
     CpSolver solver = new CpSolver();

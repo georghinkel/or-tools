@@ -78,7 +78,7 @@ void BinpackingProblemSat() {
   cp_model.Maximize(LinearExpr::BooleanSum(slacks));
 
   // Solving part.
-  const CpSolverResponse response = Solve(cp_model.Build());
+  const CpSolverResponse response = Solve(cp_model);
   LOG(INFO) << CpSolverResponseStats(response);
 }
 

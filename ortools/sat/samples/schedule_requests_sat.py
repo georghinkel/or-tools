@@ -13,8 +13,9 @@
 """Nurse scheduling problem with shift requests."""
 
 # [START program]
-# [START import]
+from __future__ import division
 from __future__ import print_function
+# [START import]
 from ortools.sat.python import cp_model
 
 # [END import]

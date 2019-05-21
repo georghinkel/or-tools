@@ -698,11 +698,13 @@ IntVarLocalSearchFilter* MakeVehicleAmortizedCostFilter(
 
 namespace {
 
-class TypeRegulationsFilter : public BasePathFilter {
+class TypeIncompatibilityFilter : public BasePathFilter {
  public:
-  explicit TypeRegulationsFilter(const RoutingModel& model);
-  ~TypeRegulationsFilter() override {}
-  std::string DebugString() const override { return "TypeRegulationsFilter"; }
+  explicit TypeIncompatibilityFilter(const RoutingModel& model);
+  ~TypeIncompatibilityFilter() override {}
+  std::string DebugString() const override {
+    return "TypeIncompatibilityFilter";
+  }
 
  private:
   void OnSynchronizePathFromStart(int64 start) override;
@@ -718,17 +720,14 @@ class TypeRegulationsFilter : public BasePathFilter {
   // incompatibilities.
   std::vector<std::vector<int>> hard_incompatibility_type_counts_per_vehicle_;
   // Used to verify the temporal incompatibilities.
-  TypeIncompatibilityChecker temporal_incompatibility_checker_;
-  TypeRequirementChecker requirement_checker_;
+  const TypeIncompatibilityChecker temporal_incompatibility_checker_;
 };
 
-TypeRegulationsFilter::TypeRegulationsFilter(const RoutingModel& model)
+TypeIncompatibilityFilter::TypeIncompatibilityFilter(const RoutingModel& model)
     : BasePathFilter(model.Nexts(), model.Size() + model.vehicles(), nullptr),
       routing_model_(model),
       start_to_vehicle_(model.Size(), -1),
-      temporal_incompatibility_checker_(model,
-                                        /*check_hard_incompatibilities*/ false),
-      requirement_checker_(model) {
+      temporal_incompatibility_checker_(model) {
   const int num_vehicles = model.vehicles();
   const bool has_hard_type_incompatibilities =
       model.HasHardTypeIncompatibilities();
@@ -746,7 +745,7 @@ TypeRegulationsFilter::TypeRegulationsFilter(const RoutingModel& model)
   }
 }
 
-void TypeRegulationsFilter::OnSynchronizePathFromStart(int64 start) {
+void TypeIncompatibilityFilter::OnSynchronizePathFromStart(int64 start) {
   if (!routing_model_.HasHardTypeIncompatibilities()) return;
 
   const int vehicle = start_to_vehicle_[start];
@@ -768,9 +767,8 @@ void TypeRegulationsFilter::OnSynchronizePathFromStart(int64 start) {
   }
 }
 
-bool TypeRegulationsFilter::HardIncompatibilitiesRespected(int vehicle,
-                                                           int64 chain_start,
-                                                           int64 chain_end) {
+bool TypeIncompatibilityFilter::HardIncompatibilitiesRespected(
+    int vehicle, int64 chain_start, int64 chain_end) {
   if (!routing_model_.HasHardTypeIncompatibilities()) return true;
 
   std::vector<int> new_type_counts =
@@ -819,23 +817,25 @@ bool TypeRegulationsFilter::HardIncompatibilitiesRespected(int vehicle,
   return true;
 }
 
-bool TypeRegulationsFilter::AcceptPath(int64 path_start, int64 chain_start,
-                                       int64 chain_end) {
+bool TypeIncompatibilityFilter::AcceptPath(int64 path_start, int64 chain_start,
+                                           int64 chain_end) {
   const int vehicle = start_to_vehicle_[path_start];
   CHECK_GE(vehicle, 0);
-  const auto next_accessor = [this](int64 node) { return GetNext(node); };
   return HardIncompatibilitiesRespected(vehicle, chain_start, chain_end) &&
-         temporal_incompatibility_checker_.CheckVehicle(vehicle,
-                                                        next_accessor) &&
-         requirement_checker_.CheckVehicle(vehicle, next_accessor);
+         temporal_incompatibility_checker_
+             .TemporalIncompatibilitiesRespectedOnVehicle(
+                 vehicle,
+                 /*next_accessor*/ [this](int64 node) {
+                   return GetNext(node);
+                 });
 }
 
 }  // namespace
 
-IntVarLocalSearchFilter* MakeTypeRegulationsFilter(
+IntVarLocalSearchFilter* MakeTypeIncompatibilityFilter(
     const RoutingModel& routing_model) {
   return routing_model.solver()->RevAlloc(
-      new TypeRegulationsFilter(routing_model));
+      new TypeIncompatibilityFilter(routing_model));
 }
 
 namespace {
@@ -1011,10 +1011,6 @@ class PathCumulFilter : public BasePathFilter {
     void Clear() {
       paths_.clear();
       transits_.clear();
-    }
-    void ClearPath(int path) {
-      paths_[path].clear();
-      transits_[path].clear();
     }
     int AddPaths(int num_paths) {
       const int first_path = paths_.size();
@@ -1379,7 +1375,7 @@ void PathCumulFilter::OnBeforeSynchronizePaths() {
     for (int r = 0; r < NumPaths(); ++r) {
       int64 node = Start(r);
       const int vehicle = start_to_vehicle_[Start(r)];
-      bool filter_with_optimizer =
+      const bool filter_with_optimizer =
           FilterWithDimensionCumulOptimizerForVehicle(vehicle);
 
       // First pass: evaluating route length to reserve memory to store route
@@ -1398,18 +1394,12 @@ void PathCumulFilter::OnBeforeSynchronizePaths() {
       min_path_cumuls.push_back(cumul);
       int64 current_cumul_cost_value = 0;
       if (filter_with_optimizer) {
-        // NOTE(user): If for some reason the optimizer did not manage to
-        // compute the optimized cumul values for this solution, we do the rest
-        // of the synchronization without the optimizer.
-        // TODO(user): Return a status from the optimizer to detect the
-        // reason behind the failure. The only admissible failures here are
-        // because of LP timeout.
-        filter_with_optimizer =
+        const bool cumuls_optimized =
             optimizer_.ComputeRouteCumulCostWithoutFixedTransits(
                 vehicle, [this](int64 node) { return Value(node); },
                 &current_cumul_cost_value);
-      }
-      if (!filter_with_optimizer) {
+        DCHECK(cumuls_optimized);
+      } else {
         current_cumul_cost_value = GetCumulSoftCost(node, cumul);
         current_cumul_cost_value = CapAdd(
             current_cumul_cost_value, GetCumulPiecewiseLinearCost(node, cumul));
@@ -1438,14 +1428,6 @@ void PathCumulFilter::OnBeforeSynchronizePaths() {
       if (FilterPrecedences()) {
         StoreMinMaxCumulOfNodesOnPath(/*path=*/r, min_path_cumuls,
                                       /*is_delta=*/false);
-      }
-      if (number_of_route_arcs == 1 &&
-          !routing_model_.AreEmptyRouteCostsConsideredForVehicle(vehicle)) {
-        // This is an empty route (single start->end arc) which we don't take
-        // into account for costs.
-        current_cumul_cost_values_[Start(r)] = 0;
-        current_path_transits_.ClearPath(r);
-        continue;
       }
       if (FilterSlackCost() && !filter_with_optimizer) {
         const int64 start =
@@ -1490,8 +1472,6 @@ void PathCumulFilter::OnBeforeSynchronizePaths() {
   // Initialize this before considering any deltas (neighbor).
   delta_max_end_cumul_ = kint64min;
   lns_detected_ = false;
-
-  DCHECK_GE(current_max_end_.cumul_value, current_min_start_.cumul_value);
   synchronized_objective_value_ =
       CapAdd(total_current_cumul_cost_value_,
              CapProd(global_span_cost_coefficient_,
@@ -1518,10 +1498,7 @@ bool PathCumulFilter::AcceptPath(int64 path_start, int64 chain_start,
   const int64 capacity = vehicle_capacities_[vehicle];
   const bool filter_with_optimizer =
       FilterWithDimensionCumulOptimizerForVehicle(vehicle);
-  const bool filter_vehicle_costs =
-      !routing_model_.IsEnd(GetNext(node)) ||
-      routing_model_.AreEmptyRouteCostsConsideredForVehicle(vehicle);
-  if (!filter_with_optimizer && filter_vehicle_costs) {
+  if (!filter_with_optimizer) {
     cumul_cost_delta = CapAdd(GetCumulSoftCost(node, cumul),
                               GetCumulPiecewiseLinearCost(node, cumul));
   }
@@ -1562,7 +1539,7 @@ bool PathCumulFilter::AcceptPath(int64 path_start, int64 chain_start,
     cumul = std::max(cumuls_[next]->Min(), cumul);
     min_path_cumuls.push_back(cumul);
     node = next;
-    if (!filter_with_optimizer && filter_vehicle_costs) {
+    if (!filter_with_optimizer) {
       cumul_cost_delta =
           CapAdd(cumul_cost_delta, GetCumulSoftCost(node, cumul));
       cumul_cost_delta =
@@ -1598,19 +1575,16 @@ bool PathCumulFilter::AcceptPath(int64 path_start, int64 chain_start,
         }
         min_total_slack = std::max(min_total_slack, min_total_break);
       }
-      if (filter_vehicle_costs) {
-        cumul_cost_delta = CapAdd(
-            cumul_cost_delta,
-            CapProd(vehicle_span_cost_coefficients_[vehicle], min_total_slack));
-      }
+      cumul_cost_delta = CapAdd(
+          cumul_cost_delta,
+          CapProd(vehicle_span_cost_coefficients_[vehicle], min_total_slack));
     }
     if (CapAdd(total_transit, min_total_slack) >
         vehicle_span_upper_bounds_[vehicle]) {
       return false;
     }
   }
-  if (FilterCumulSoftLowerBounds() && !filter_with_optimizer &&
-      filter_vehicle_costs) {
+  if (FilterCumulSoftLowerBounds() && !filter_with_optimizer) {
     cumul_cost_delta =
         CapAdd(cumul_cost_delta,
                GetPathCumulSoftLowerBoundCost(delta_path_transits_, path));
@@ -1624,20 +1598,12 @@ bool PathCumulFilter::AcceptPath(int64 path_start, int64 chain_start,
   if (FilterPrecedences()) {
     StoreMinMaxCumulOfNodesOnPath(path, min_path_cumuls, /*is_delta=*/true);
   }
-  if (!filter_vehicle_costs) {
-    // If this route's costs should't be taken into account, reset the
-    // cumul_cost_delta and delta_path_transits_ for this path.
-    cumul_cost_delta = 0;
-    delta_path_transits_.ClearPath(path);
-  }
   if (FilterSpanCost() || FilterCumulSoftBounds() || FilterSlackCost() ||
       FilterCumulSoftLowerBounds() || FilterCumulPiecewiseLinearCosts()) {
     delta_paths_.insert(GetPath(path_start));
+    delta_max_end_cumul_ = std::max(delta_max_end_cumul_, cumul);
     cumul_cost_delta =
         CapSub(cumul_cost_delta, current_cumul_cost_values_[path_start]);
-    if (filter_vehicle_costs) {
-      delta_max_end_cumul_ = std::max(delta_max_end_cumul_, min_end);
-    }
   }
   cumul_cost_delta_ = CapAdd(cumul_cost_delta_, cumul_cost_delta);
   return true;
@@ -1904,7 +1870,7 @@ std::vector<IntVarLocalSearchFilter*> MakeCumulFilters(
     IntVarLocalSearchFilter* lp_cumul_filter =
         MakeGlobalLPCumulFilter(dimension, objective_callback);
     filters.push_back(lp_cumul_filter);
-    if (filter_objective) {
+    if (objective_callback != nullptr) {
       objective_callback = [lp_cumul_filter](int64 value) {
         return lp_cumul_filter->InjectObjectiveValue(value);
       };
@@ -2284,8 +2250,6 @@ class VehicleBreaksFilter : public BasePathFilter {
   DisjunctivePropagator::Tasks tasks_;
   // Used to check whether propagation changed a vector.
   std::vector<int64> old_start_min_;
-  std::vector<int64> old_start_max_;
-  std::vector<int64> old_end_min_;
   std::vector<int64> old_end_max_;
   std::vector<int> start_to_vehicle_;
 };
@@ -2308,10 +2272,7 @@ bool VehicleBreaksFilter::AcceptPath(int64 path_start, int64 chain_start,
   const int vehicle = start_to_vehicle_[path_start];
   if (!dimension_.VehicleHasBreakIntervals(vehicle)) return true;
   tasks_.start_min.clear();
-  tasks_.start_max.clear();
   tasks_.duration_min.clear();
-  tasks_.duration_max.clear();
-  tasks_.end_min.clear();
   tasks_.end_max.clear();
   tasks_.is_preemptible.clear();
   tasks_.forbidden_intervals.clear();
@@ -2319,21 +2280,17 @@ bool VehicleBreaksFilter::AcceptPath(int64 path_start, int64 chain_start,
   int64 group_delay = 0LL;
   int64 current = path_start;
   while (true) {
-    const int64 cumul_min = dimension_.CumulVar(current)->Min();
-    const int64 cumul_max = dimension_.CumulVar(current)->Max();
-    // Tasks from visits. Visits start before the group_delay at Cumul(current),
-    // end at Cumul() + visit_duration.
+    // Add tasks from visits.
     const bool node_is_last = model_.IsEnd(current);
     const int64 visit_duration =
         node_is_last
             ? 0LL
             : dimension_.GetNodeVisitTransitsOfVehicle(vehicle)[current];
-    tasks_.start_min.push_back(CapSub(cumul_min, group_delay));
-    tasks_.start_max.push_back(CapSub(cumul_max, group_delay));
+    tasks_.start_min.push_back(
+        CapSub(dimension_.CumulVar(current)->Min(), group_delay));
     tasks_.duration_min.push_back(CapAdd(group_delay, visit_duration));
-    tasks_.duration_max.push_back(CapAdd(group_delay, visit_duration));
-    tasks_.end_min.push_back(CapAdd(cumul_min, visit_duration));
-    tasks_.end_max.push_back(CapAdd(cumul_max, visit_duration));
+    tasks_.end_max.push_back(
+        CapAdd(dimension_.CumulVar(current)->Max(), visit_duration));
     tasks_.is_preemptible.push_back(false);
     tasks_.forbidden_intervals.push_back(
         &(dimension_.forbidden_intervals()[current]));
@@ -2341,23 +2298,20 @@ bool VehicleBreaksFilter::AcceptPath(int64 path_start, int64 chain_start,
         tasks_.forbidden_intervals.back()->NumIntervals() > 0;
     if (node_is_last) break;
 
-    // Tasks from transits. Transit starts after the visit,
-    // but before the next group_delay.
+    // Add tasks from transits.
     const int next = GetNext(current);
+    tasks_.start_min.push_back(
+        CapAdd(CapAdd(tasks_.start_min.back(), group_delay), visit_duration));
     group_delay = dimension_.GetGroupDelay(vehicle, current, next);
-    tasks_.start_min.push_back(CapAdd(cumul_min, visit_duration));
-    tasks_.start_max.push_back(CapAdd(cumul_max, visit_duration));
     tasks_.duration_min.push_back(
         CapSub(CapSub(dimension_.transit_evaluator(vehicle)(current, next),
                       visit_duration),
                group_delay));
-    tasks_.duration_max.push_back(kint64max);
-    tasks_.end_min.push_back(
-        CapSub(dimension_.CumulVar(next)->Min(), group_delay));
     tasks_.end_max.push_back(
         CapSub(dimension_.CumulVar(next)->Max(), group_delay));
     tasks_.is_preemptible.push_back(true);
     tasks_.forbidden_intervals.push_back(nullptr);
+
     current = next;
   }
   tasks_.num_chain_tasks = tasks_.start_min.size();
@@ -2365,36 +2319,22 @@ bool VehicleBreaksFilter::AcceptPath(int64 path_start, int64 chain_start,
   for (IntervalVar* interval : dimension_.GetBreakIntervalsOfVehicle(vehicle)) {
     if (!interval->MustBePerformed()) continue;
     tasks_.start_min.push_back(interval->StartMin());
-    tasks_.start_max.push_back(interval->StartMax());
     tasks_.duration_min.push_back(interval->DurationMin());
-    tasks_.duration_max.push_back(interval->DurationMax());
-    tasks_.end_min.push_back(interval->EndMin());
     tasks_.end_max.push_back(interval->EndMax());
     tasks_.is_preemptible.push_back(false);
     tasks_.forbidden_intervals.push_back(nullptr);
   }
-  // Add side constraints.
-  if (!has_forbidden_intervals) tasks_.forbidden_intervals.clear();
-  tasks_.distance_duration.clear();
-  if (dimension_.HasBreakDistanceDurationOfVehicle(vehicle)) {
-    tasks_.distance_duration =
-        dimension_.GetBreakDistanceDurationOfVehicle(vehicle);
-  }
   // Reduce bounds until failure or fixed point is reached.
-  // We set a maximum amount of iterations to avoid slow propagation.
+  if (!has_forbidden_intervals) tasks_.forbidden_intervals.clear();
+
   bool is_feasible = true;
-  int maximum_num_iterations = 8;
-  while (--maximum_num_iterations >= 0) {
+  while (true) {
     old_start_min_ = tasks_.start_min;
-    old_start_max_ = tasks_.start_max;
-    old_end_min_ = tasks_.end_min;
     old_end_max_ = tasks_.end_max;
     is_feasible = disjunctive_propagator_.Propagate(&tasks_);
-    if (!is_feasible) break;
     // If fixed point reached, stop.
     if ((old_start_min_ == tasks_.start_min) &&
-        (old_start_max_ == tasks_.start_max) &&
-        (old_end_min_ == tasks_.end_min) && (old_end_max_ == tasks_.end_max)) {
+        (old_end_max_ == tasks_.end_max)) {
       break;
     }
   }
@@ -2426,7 +2366,7 @@ class LPCumulFilter : public IntVarLocalSearchFilter {
 
  private:
   GlobalDimensionCumulOptimizer optimizer_;
-  IntVar* const objective_;
+  const IntVar* const objective_;
   int64 synchronized_cost_without_transit_;
   int64 delta_cost_without_transit_;
   SparseBitset<int64> delta_touched_;
@@ -2484,11 +2424,6 @@ bool LPCumulFilter::Accept(Assignment* delta, Assignment* deltadelta) {
       CapAdd(injected_objective_value_, delta_cost_without_transit_);
   PropagateObjectiveValue(new_objective_value);
 
-  if (!delta->HasObjective()) {
-    delta->AddObjective(objective_);
-  }
-  delta->SetObjectiveMin(new_objective_value);
-
   return new_objective_value <= objective_max;
 }
 
@@ -2502,8 +2437,8 @@ void LPCumulFilter::OnSynchronize(const Assignment* delta) {
   if (!optimizer_.ComputeCumulCostWithoutFixedTransits(
           [this](int64 index) { return Value(index); },
           &synchronized_cost_without_transit_)) {
-    // TODO(user): This should only happen if the LP solver times out.
-    // DCHECK the fail wasn't due to an infeasible model.
+    LOG(DFATAL)
+        << "Infeasible LP problem when calling LPCumulFilter::OnSynchronize().";
     synchronized_cost_without_transit_ = 0;
   }
   PropagateObjectiveValue(

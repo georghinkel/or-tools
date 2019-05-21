@@ -39,20 +39,16 @@ namespace sat {
 // which constraint should go into the current LP.
 class LinearConstraintManager {
  public:
-  explicit LinearConstraintManager(Model* model)
-      : sat_parameters_(*model->GetOrCreate<SatParameters>()),
-        integer_trail_(*model->GetOrCreate<IntegerTrail>()) {}
+  LinearConstraintManager() {}
   ~LinearConstraintManager();
 
   // Add a new constraint to the manager. Note that we canonicalize constraints
-  // and merge the bounds of constraints with the same terms. We also perform
-  // basic preprocessing.
-  DEFINE_INT_TYPE(ConstraintIndex, int32);
-  ConstraintIndex Add(LinearConstraint ct);
+  // and merge the bounds of constraints with the same terms.
+  void Add(const LinearConstraint& ct);
 
   // Same as Add(), but logs some information about the newly added constraint.
   // Cuts are also handled slightly differently than normal constraints.
-  void AddCut(LinearConstraint ct, std::string type_name,
+  void AddCut(const LinearConstraint& ct, std::string type_name,
               const gtl::ITIVector<IntegerVariable, double>& lp_solution);
 
   // Heuristic to decides what LP is best solved next. The given lp_solution
@@ -67,6 +63,7 @@ class LinearConstraintManager {
   void AddAllConstraintsToLp();
 
   // All the constraints managed by this class.
+  DEFINE_INT_TYPE(ConstraintIndex, int32);
   const gtl::ITIVector<ConstraintIndex, LinearConstraint>& AllConstraints()
       const {
     return constraints_;
@@ -78,29 +75,18 @@ class LinearConstraintManager {
     return lp_constraints_;
   }
 
-  int64 num_cuts() const { return num_cuts_; }
-  int64 num_shortened_constraints() const { return num_shortened_constraints_; }
-  int64 num_coeff_strenghtening() const { return num_coeff_strenghtening_; }
+  void SetParameters(const SatParameters& params) { sat_parameters_ = params; }
+
+  int num_cuts() const { return num_cuts_; }
 
  private:
   // Removes the marked constraints from the LP.
   void RemoveMarkedConstraints();
 
-  // Apply basic inprocessing simplification rules:
-  //  - remove fixed variable
-  //  - reduce large coefficient (i.e. coeff strenghtenning or big-M reduction).
-  // This uses level-zero bounds.
-  // Returns true if the terms of the constraint changed.
-  bool SimplifyConstraint(LinearConstraint* ct);
+  SatParameters sat_parameters_;
 
-  const SatParameters& sat_parameters_;
-  const IntegerTrail& integer_trail_;
-
-  // Set at true by Add()/SimplifyConstraint() and at false by ChangeLp().
-  bool current_lp_is_changed_ = false;
-
-  // Optimization to avoid calling SimplifyConstraint() when not needed.
-  int64 last_simplification_timestamp_ = 0;
+  // Set at true by Add() and at false by ChangeLp().
+  bool some_lp_constraint_bounds_changed_ = false;
 
   // TODO(user): Merge all the constraint related info in a struct and store
   // a vector of struct instead. The global list of constraint.
@@ -122,20 +108,25 @@ class LinearConstraintManager {
   gtl::ITIVector<ConstraintIndex, bool> constraint_is_in_lp_;
   std::vector<ConstraintIndex> lp_constraints_;
 
-  // We keep a map from the hash of our constraint terms to their position in
-  // constraints_. This is an optimization to detect duplicate constraints. We
-  // are robust to collisions because we always relies on the ground truth
-  // contained in constraints_ and the code is still okay if we do not merge the
-  // constraints.
-  absl::flat_hash_map<size_t, ConstraintIndex> equiv_constraints_;
-  gtl::ITIVector<ConstraintIndex, size_t> constraint_hashes_;
-
+  // For each constraint "terms", equiv_constraints_ indicates the index of a
+  // constraint with the same terms in constraints_. This way, when a
+  // "duplicate" constraint is added, we can just update its bound.
+  using Terms = std::vector<std::pair<IntegerVariable, IntegerValue>>;
+  struct TermsHash {
+    std::size_t operator()(const Terms& terms) const {
+      size_t hash = 0;
+      for (const auto& term : terms) {
+        const size_t pair_hash =
+            util_hash::Hash(term.first.value(), term.second.value());
+        hash = util_hash::Hash(pair_hash, hash);
+      }
+      return hash;
+    }
+  };
+  absl::flat_hash_map<Terms, int, TermsHash> equiv_constraints_;
   int64 num_merged_constraints_ = 0;
-  int64 num_shortened_constraints_ = 0;
-  int64 num_splitted_constraints_ = 0;
-  int64 num_coeff_strenghtening_ = 0;
 
-  int64 num_cuts_ = 0;
+  int num_cuts_ = 0;
   std::map<std::string, int> type_to_num_cuts_;
 };
 

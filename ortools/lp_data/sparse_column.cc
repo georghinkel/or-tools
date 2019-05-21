@@ -12,7 +12,6 @@
 // limitations under the License.
 
 #include "ortools/lp_data/sparse_column.h"
-
 #include <algorithm>
 
 #include "ortools/lp_data/lp_types.h"

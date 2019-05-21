@@ -736,15 +736,6 @@ void LoadIntMinConstraint(const ConstraintProto& ct, Model* m) {
 void LoadIntMaxConstraint(const ConstraintProto& ct, Model* m) {
   auto* mapping = m->GetOrCreate<CpModelMapping>();
   const IntegerVariable max = mapping->Integer(ct.int_max().target());
-
-  if (ct.int_max().vars_size() == 2 &&
-      NegatedRef(ct.int_max().vars(0)) == ct.int_max().vars(1)) {
-    const IntegerVariable var =
-        mapping->Integer(PositiveRef(ct.int_max().vars(0)));
-    m->Add(IsEqualToAbsOf(max, var));
-    return;
-  }
-
   const std::vector<IntegerVariable> vars =
       mapping->Integers(ct.int_max().vars());
   m->Add(IsEqualToMaxOf(max, vars));
@@ -761,8 +752,7 @@ void LoadNoOverlap2dConstraint(const ConstraintProto& ct, Model* m) {
       mapping->Intervals(ct.no_overlap_2d().x_intervals());
   const std::vector<IntervalVariable> y_intervals =
       mapping->Intervals(ct.no_overlap_2d().y_intervals());
-  m->Add(
-      NonOverlappingRectangles(x_intervals, y_intervals, /*is_strict=*/true));
+  m->Add(StrictNonOverlappingRectangles(x_intervals, y_intervals));
 }
 
 void LoadCumulativeConstraint(const ConstraintProto& ct, Model* m) {

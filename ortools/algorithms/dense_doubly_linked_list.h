@@ -15,7 +15,6 @@
 #define OR_TOOLS_ALGORITHMS_DENSE_DOUBLY_LINKED_LIST_H_
 
 #include <vector>
-
 #include "ortools/base/logging.h"
 
 namespace operations_research {

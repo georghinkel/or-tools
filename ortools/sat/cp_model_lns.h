@@ -43,11 +43,8 @@ struct Neighborhood {
 // Thread-safe.
 class NeighborhoodGeneratorHelper {
  public:
-  NeighborhoodGeneratorHelper(CpModelProto const* model_proto,
+  NeighborhoodGeneratorHelper(CpModelProto const* model,
                               bool focus_on_decision_variables);
-
-  // Updates private variables using the current 'model_proto_'.
-  void UpdateHelperData(bool focus_on_decision_variables);
 
   // Returns the LNS fragment where the given variables are fixed to the value
   // they take in the given solution.
@@ -60,10 +57,6 @@ class NeighborhoodGeneratorHelper {
   Neighborhood RelaxGivenVariables(
       const CpSolverResponse& initial_solution,
       const std::vector<int>& relaxed_variables) const;
-
-  // Returns a trivial model by fixing all active variables to the initial
-  // solution values.
-  Neighborhood FixAllVariables(const CpSolverResponse& initial_solution) const;
 
   // Indicates if the variable can be frozen. It happens if the variable is non
   // constant, and if it is a decision variable, or if
@@ -140,28 +133,9 @@ class NeighborhoodGenerator {
   // Returns a short description of the generator.
   std::string name() const { return name_; }
 
-  // Uses UCB1 algorithm to compute the score (Multi armed bandit problem).
-  // Details are at
-  // https://lilianweng.github.io/lil-log/2018/01/23/the-multi-armed-bandit-problem-and-its-solutions.html.
-  // 'total_num_calls' should be the sum of calls across all generators part of
-  // the multi armed bandit problem.
-  // If the generator is called less than 10 times then the method returns
-  // inifinity as score in order to get more data about the generator
-  // performance.
-  double GetUCBScore(int64 total_num_calls) const;
-
-  // Updates the records using the current improvement in objective for the
-  // generator.
-  void AddSolveData(double objective_diff, double deterministic_time);
-
-  // Number of times this generator is called.
-  int64 num_calls() const { return num_calls_; }
-
  protected:
   const NeighborhoodGeneratorHelper& helper_;
   const std::string name_;
-  int64 num_calls_ = 0;
-  double current_average_ = 0.0;
 };
 
 // Pick a random subset of variables.
@@ -243,14 +217,14 @@ class SchedulingTimeWindowNeighborhoodGenerator : public NeighborhoodGenerator {
 class RelaxationInducedNeighborhoodGenerator : public NeighborhoodGenerator {
  public:
   explicit RelaxationInducedNeighborhoodGenerator(
-      NeighborhoodGeneratorHelper const* helper, Model* model,
+      NeighborhoodGeneratorHelper const* helper, const Model& model,
       const std::string& name)
       : NeighborhoodGenerator(name, helper), model_(model) {}
 
   Neighborhood Generate(const CpSolverResponse& initial_solution, int64 seed,
                         double difficulty) const final;
 
-  const Model* model_;
+  const Model& model_;
 };
 
 }  // namespace sat

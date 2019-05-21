@@ -2,11 +2,6 @@
 set -x
 set -e
 
-if [ ! -f "$DOTNET_SNK" ]; then
-  echo "DOTNET_SNK: not found !" | tee build.log
-  exit 1
-fi
-
 # Clean everything
 make clean
 make clean_third_party
@@ -27,13 +22,8 @@ command -v swig | xargs echo "swig: " | tee -a build.log
 # python
 command -v python2.7
 command -v python2.7 | xargs echo "python2.7: " | tee -a build.log
-python2.7 -c "import distutils.util as u; print(u.get_platform())" | tee -a build.log
-command -v python3.6
-command -v python3.6 | xargs echo "python3.6: " | tee -a build.log
-python3.6 -c "import distutils.util as u; print(u.get_platform())" | tee -a build.log
 command -v python3.7
 command -v python3.7 | xargs echo "python3.7: " | tee -a build.log
-python3.7 -c "import distutils.util as u; print(u.get_platform())" | tee -a build.log
 # java
 echo "JAVA_HOME: ${JAVA_HOME}" | tee -a build.log
 command -v java
@@ -42,7 +32,6 @@ command -v javac
 command -v javac | xargs echo "javac: " | tee -a build.log
 command -v jar
 command -v jar | xargs echo "jar: " | tee -a build.log
-java -version 2>&1 | head -n 1 | grep 1.8
 # C#
 command -v dotnet
 command -v dotnet | xargs echo "dotnet: " | tee -a build.log
@@ -112,34 +101,13 @@ echo "DONE" | tee -a build.log
 #make test_python UNIX_PYTHON_VER=2.7
 #echo "make test_python2.7: DONE" | tee -a build.log
 echo -n "Build Python 2.7 wheel archive..." | tee -a build.log
-make python_package UNIX_PYTHON_VER=2.7
+make pypi_archive UNIX_PYTHON_VER=2.7
 echo "DONE" | tee -a build.log
 echo -n "Test Python 2.7 wheel archive..." | tee -a build.log
-make test_python_package UNIX_PYTHON_VER=2.7
+make test_pypi_archive UNIX_PYTHON_VER=2.7
 echo "DONE" | tee -a build.log
 
 cp temp_python2.7/ortools/dist/*.whl .
-
-##################
-##  Python 3.6  ##
-##################
-echo -n "Cleaning Python..." | tee -a build.log
-make clean_python UNIX_PYTHON_VER=3.6
-echo "DONE" | tee -a build.log
-
-echo -n "Build Python 3.6..." | tee -a build.log
-make python -l 4 UNIX_PYTHON_VER=3.6
-echo "DONE" | tee -a build.log
-#make test_python UNIX_PYTHON_VER=3.6
-#echo "make test_python3.6: DONE" | tee -a build.log
-echo -n "Build Python 3.6 wheel archive..." | tee -a build.log
-make python_package UNIX_PYTHON_VER=3.6
-echo "DONE" | tee -a build.log
-echo -n "Test Python 3.6 wheel archive..." | tee -a build.log
-make test_python_package UNIX_PYTHON_VER=3.6
-echo "DONE" | tee -a build.log
-
-cp temp_python3.6/ortools/dist/*.whl .
 
 ##################
 ##  Python 3.7  ##
@@ -154,10 +122,10 @@ echo "DONE" | tee -a build.log
 #make test_python UNIX_PYTHON_VER=3.7
 #echo "make test_python3.7: DONE" | tee -a build.log
 echo -n "Build Python 3.7 wheel archive..." | tee -a build.log
-make python_package UNIX_PYTHON_VER=3.7
+make pypi_archive UNIX_PYTHON_VER=3.7
 echo "DONE" | tee -a build.log
 echo -n "Test Python 3.7 wheel archive..." | tee -a build.log
-make test_python_package UNIX_PYTHON_VER=3.7
+make test_pypi_archive UNIX_PYTHON_VER=3.7
 echo "DONE" | tee -a build.log
 
 cp temp_python3.7/ortools/dist/*.whl .

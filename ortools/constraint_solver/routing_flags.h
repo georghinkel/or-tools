@@ -28,7 +28,6 @@ DECLARE_bool(routing_no_relocate);
 DECLARE_bool(routing_no_relocate_neighbors);
 DECLARE_bool(routing_no_relocate_subtrip);
 DECLARE_bool(routing_no_exchange);
-DECLARE_bool(routing_no_exchange_subtrip);
 DECLARE_bool(routing_no_cross);
 DECLARE_bool(routing_no_2opt);
 DECLARE_bool(routing_no_oropt);

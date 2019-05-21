@@ -120,10 +120,7 @@ std::vector<int64> AllValuesInDomain(const ProtoWithDomain& proto) {
 
 // Scale back a objective value to a double value from the original model.
 inline double ScaleObjectiveValue(const CpObjectiveProto& proto, int64 value) {
-  double result = static_cast<double>(value);
-  if (value == kint64min) result = -std::numeric_limits<double>::infinity();
-  if (value == kint64max) result = std::numeric_limits<double>::infinity();
-  result += proto.offset();
+  double result = value + proto.offset();
   if (proto.scaling_factor() == 0) return result;
   return proto.scaling_factor() * result;
 }

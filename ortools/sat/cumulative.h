@@ -39,14 +39,10 @@ namespace sat {
 //
 // This constraint assumes that an interval can be optional or have a duration
 // of zero. The demands and the capacity can be any non-negative number.
-//
-// Optimization: If one already have an helper constructed from the interval
-// variable, it can be passed as last argument.
 std::function<void(Model*)> Cumulative(
     const std::vector<IntervalVariable>& vars,
     const std::vector<IntegerVariable>& demand_vars,
-    const IntegerVariable& capacity_var,
-    SchedulingConstraintHelper* helper = nullptr);
+    const IntegerVariable& capacity_var);
 
 // Adds a simple cumulative constraint on the given intervals, the associated
 // demands and the capacity variables. See the comment of Cumulative() above for
@@ -57,8 +53,7 @@ std::function<void(Model*)> Cumulative(
 std::function<void(Model*)> CumulativeTimeDecomposition(
     const std::vector<IntervalVariable>& vars,
     const std::vector<IntegerVariable>& demand_vars,
-    const IntegerVariable& capacity_var,
-    SchedulingConstraintHelper* helper = nullptr);
+    const IntegerVariable& capacity_var);
 
 }  // namespace sat
 }  // namespace operations_research

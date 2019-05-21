@@ -12,7 +12,6 @@
 // limitations under the License.
 
 #include "ortools/util/rational_approximation.h"
-
 #include <cmath>
 #include <limits>
 

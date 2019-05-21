@@ -14,13 +14,7 @@
 #ifndef OR_TOOLS_BASE_CANONICAL_ERRORS_H_
 #define OR_TOOLS_BASE_CANONICAL_ERRORS_H_
 
-#include "ortools/base/status.h"
-
 namespace util {
-
-inline Status InternalError(const std::string& message) {
-  return Status(error::INTERNAL, message);
-}
 
 inline Status InvalidArgumentError(const std::string& message) {
   return Status(error::INVALID_ARGUMENT, message);

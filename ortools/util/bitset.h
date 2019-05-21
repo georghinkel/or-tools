@@ -17,7 +17,6 @@
 #define OR_TOOLS_UTIL_BITSET_H_
 
 #include <string.h>
-
 #include <algorithm>
 #include <vector>
 

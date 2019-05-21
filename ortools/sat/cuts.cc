@@ -410,6 +410,7 @@ CutGenerator CreateKnapsackCoverCutGenerator(
     const std::vector<IntegerVariable>& vars, Model* model) {
   CutGenerator result;
   result.vars = vars;
+  result.type = "Knapsack";
 
   IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
   std::vector<LinearConstraint> knapsack_constraints;
@@ -421,14 +422,14 @@ CutGenerator CreateKnapsackCoverCutGenerator(
   // TODO(user): do not add generator if there are no knapsack constraints.
   result.generate_cuts = [knapsack_constraints, vars, model, integer_trail](
                              const gtl::ITIVector<IntegerVariable, double>&
-                                 lp_values,
-                             LinearConstraintManager* manager) {
-    if (AllVarsTakeIntegerValue(vars, lp_values)) return;
+                                 lp_values) {
+    std::vector<LinearConstraint> cuts;
+    if (AllVarsTakeIntegerValue(vars, lp_values)) return cuts;
 
     KnapsackSolverForCuts knapsack_solver(
         "Knapsack on demand cover cut generator");
     int64 skipped_constraints = 0;
-
+    int64 lifted_cuts = 0;
     // Iterate through all knapsack constraints.
     for (const LinearConstraint& constraint : knapsack_constraints) {
       if (model->GetOrCreate<TimeLimit>()->LimitReached()) break;
@@ -529,23 +530,24 @@ CutGenerator CreateKnapsackCoverCutGenerator(
             *integer_trail);
 
         // Check if the constraint has only binary variables.
-        bool is_lifted = false;
         if (ConstraintIsEligibleForLifting(cut, *integer_trail)) {
           if (LiftKnapsackCut(constraint, lp_values,
                               cut_vars_original_coefficients, *integer_trail,
                               model->GetOrCreate<TimeLimit>(), &cut)) {
-            is_lifted = true;
+            lifted_cuts++;
           }
         }
 
         CHECK(!SolutionSatisfiesConstraint(cut, lp_values));
-        manager->AddCut(cut, is_lifted ? "LiftedKnapsack" : "Knapsack",
-                        lp_values);
+        cuts.push_back(cut);
       }
     }
     if (skipped_constraints > 0) {
       VLOG(2) << "Skipped constraints: " << skipped_constraints;
     }
+    if (!cuts.empty()) VLOG(1) << "#KnapsackCuts: " << cuts.size();
+    if (lifted_cuts > 0) VLOG(1) << "#LiftedKnapsackCuts: " << lifted_cuts;
+    return cuts;
   };
 
   return result;

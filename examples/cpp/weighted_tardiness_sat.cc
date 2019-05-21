@@ -12,7 +12,6 @@
 // limitations under the License.
 
 #include <math.h>
-
 #include <numeric>
 #include <vector>
 
@@ -208,7 +207,7 @@ void Solve(const std::vector<int64>& durations,
   }));
 
   // Solve.
-  const CpSolverResponse response = SolveWithModel(cp_model.Build(), &model);
+  const CpSolverResponse response = SolveWithModel(cp_model, &model);
   LOG(INFO) << CpSolverResponseStats(response);
 }
 

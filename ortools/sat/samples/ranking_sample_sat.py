@@ -12,6 +12,8 @@
 # limitations under the License.
 """Code sample to demonstrates how to rank intervals."""
 
+from __future__ import absolute_import
+from __future__ import division
 from __future__ import print_function
 
 from ortools.sat.python import cp_model
@@ -96,7 +98,7 @@ def RankingSampleSat():
         start = model.NewIntVar(0, horizon, 'start_%i' % t)
         duration = t + 1
         end = model.NewIntVar(0, horizon, 'end_%i' % t)
-        if t < num_tasks // 2:
+        if t < num_tasks / 2:
             interval = model.NewIntervalVar(start, duration, end,
                                             'interval_%i' % t)
             presence = True

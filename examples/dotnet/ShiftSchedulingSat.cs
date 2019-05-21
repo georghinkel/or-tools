@@ -284,7 +284,6 @@ public class ShiftSchedulingSat
 
         // Solve model
         var solver = new CpSolver();
-	solver.StringParameters = "num_search_workers:8";
 
         var solutionPrinter = new ObjectiveSolutionPrinter();
         var status = solver.SolveWithSolutionCallback(model, solutionPrinter);
@@ -546,3 +545,4 @@ public class ShiftSchedulingSat
         return Range(0, stop);
     }
 }
+

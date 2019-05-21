@@ -65,15 +65,13 @@ class BooleanXorPropagator : public PropagatorInterface {
 // alternatives.
 //
 // This constraint take care of this case when no selectors[i] is chosen yet.
-//
-// This constraint support duplicate selectors.
 class GreaterThanAtLeastOneOfPropagator : public PropagatorInterface {
  public:
-  GreaterThanAtLeastOneOfPropagator(
-      IntegerVariable target_var, const absl::Span<const IntegerVariable> vars,
-      const absl::Span<const IntegerValue> offsets,
-      const absl::Span<const Literal> selectors,
-      const absl::Span<const Literal> enforcements, Model* model);
+  GreaterThanAtLeastOneOfPropagator(IntegerVariable target_var,
+                                    const std::vector<IntegerVariable>& vars,
+                                    const std::vector<IntegerValue>& offsets,
+                                    const std::vector<Literal>& selectors,
+                                    Model* model);
 
   bool Propagate() final;
   void RegisterWith(GenericLiteralWatcher* watcher);
@@ -83,7 +81,6 @@ class GreaterThanAtLeastOneOfPropagator : public PropagatorInterface {
   const std::vector<IntegerVariable> vars_;
   const std::vector<IntegerValue> offsets_;
   const std::vector<Literal> selectors_;
-  const std::vector<Literal> enforcements_;
 
   Trail* trail_;
   IntegerTrail* integer_trail_;
@@ -121,27 +118,13 @@ inline std::function<void(Model*)> LiteralXorIs(
 }
 
 inline std::function<void(Model*)> GreaterThanAtLeastOneOf(
-    IntegerVariable target_var, const absl::Span<const IntegerVariable> vars,
-    const absl::Span<const IntegerValue> offsets,
-    const absl::Span<const Literal> selectors) {
+    IntegerVariable target_var, const std::vector<IntegerVariable>& vars,
+    const std::vector<IntegerValue>& offsets,
+    const std::vector<Literal>& selectors) {
   return [=](Model* model) {
     GreaterThanAtLeastOneOfPropagator* constraint =
         new GreaterThanAtLeastOneOfPropagator(target_var, vars, offsets,
-                                              selectors, {}, model);
-    constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
-    model->TakeOwnership(constraint);
-  };
-}
-
-inline std::function<void(Model*)> GreaterThanAtLeastOneOf(
-    IntegerVariable target_var, const absl::Span<const IntegerVariable> vars,
-    const absl::Span<const IntegerValue> offsets,
-    const absl::Span<const Literal> selectors,
-    const absl::Span<const Literal> enforcements) {
-  return [=](Model* model) {
-    GreaterThanAtLeastOneOfPropagator* constraint =
-        new GreaterThanAtLeastOneOfPropagator(target_var, vars, offsets,
-                                              selectors, enforcements, model);
+                                              selectors, model);
     constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
     model->TakeOwnership(constraint);
   };

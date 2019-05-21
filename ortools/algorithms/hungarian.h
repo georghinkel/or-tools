@@ -34,7 +34,6 @@
 #define OR_TOOLS_ALGORITHMS_HUNGARIAN_H_
 
 #include <vector>
-
 #include "absl/container/flat_hash_map.h"
 
 namespace operations_research {

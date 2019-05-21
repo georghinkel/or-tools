@@ -12,13 +12,10 @@
 // limitations under the License.
 
 #include "ortools/sat/cp_model.h"
-
 #include "absl/strings/str_format.h"
 #include "ortools/base/map_util.h"
 #include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/cp_model_utils.h"
-#include "ortools/sat/sat_parameters.pb.h"
 
 namespace operations_research {
 namespace sat {
@@ -727,27 +724,13 @@ void CpModelBuilder::AddDecisionStrategy(
   proto->set_domain_reduction_strategy(domain_strategy);
 }
 
-CpSolverResponse Solve(const CpModelProto& model_proto) {
+CpSolverResponse Solve(CpModelBuilder cp_model) {
   Model model;
-  return SolveCpModel(model_proto, &model);
+  return SolveCpModel(cp_model.Proto(), &model);
 }
 
-CpSolverResponse SolveWithModel(const CpModelProto& model_proto, Model* model) {
-  return SolveCpModel(model_proto, model);
-}
-
-CpSolverResponse SolveWithParameters(const CpModelProto& model_proto,
-                                     const SatParameters& params) {
-  Model model;
-  model.Add(NewSatParameters(params));
-  return SolveCpModel(model_proto, &model);
-}
-
-CpSolverResponse SolveWithParameters(const CpModelProto& model_proto,
-                                     const std::string& params) {
-  Model model;
-  model.Add(NewSatParameters(params));
-  return SolveCpModel(model_proto, &model);
+CpSolverResponse SolveWithModel(CpModelBuilder cp_model, Model* model) {
+  return SolveCpModel(cp_model.Proto(), model);
 }
 
 int64 SolutionIntegerValue(const CpSolverResponse& r, const LinearExpr& expr) {

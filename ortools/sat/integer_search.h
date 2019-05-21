@@ -11,15 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file contains all the top-level logic responsible for driving the search
-// of a satisfiability integer problem. What decision we take next, which new
-// Literal associated to an IntegerLiteral we create and when we restart.
-//
-// For an optimization problem, our algorithm solves a sequence of decision
-// problem using this file as an entry point. Note that some heuristics here
-// still use the objective if there is one in order to orient the search towards
-// good feasible solution though.
-
 #ifndef OR_TOOLS_SAT_INTEGER_SEARCH_H_
 #define OR_TOOLS_SAT_INTEGER_SEARCH_H_
 
@@ -32,73 +23,9 @@
 namespace operations_research {
 namespace sat {
 
-// Model struct that contains the search heuristics used to find a feasible
-// solution to an integer problem.
-//
-// This is reset by ConfigureSearchHeuristics() and used by
-// SolveIntegerProblem(), see below.
-struct SearchHeuristics {
-  // Decision and restart heuristics. The two vectors must be of the same size
-  // and restart_policies[i] will always be used in conjunction with
-  // decision_policies[i].
-  std::vector<std::function<LiteralIndex()>> decision_policies;
-  std::vector<std::function<bool()>> restart_policies;
-
-  // Index in the vector above that indicate the current configuration.
-  int policy_index;
-};
-
-// Given a base "fixed_search" function that should mainly control in which
-// order integer variables are lazily instantiated (and at what value), this
-// uses the current solver parameters to set the SearchHeuristics class in the
-// given model.
-void ConfigureSearchHeuristics(
-    const std::function<LiteralIndex()>& fixed_search, Model* model);
-
-// For an optimization problem, this contains the internal integer objective
-// to minimize and information on how to display it correctly in the logs.
-struct ObjectiveDefinition {
-  double scaling_factor = 1.0;
-  double offset = 0.0;
-  IntegerVariable objective_var = kNoIntegerVariable;
-
-  double ScaleIntegerObjective(IntegerValue value) const {
-    return (ToDouble(value) + offset) * scaling_factor;
-  }
-};
-
-// Callbacks that will be called when the search goes back to level 0.
-// Callbacks should return false if the propagation fails.
-struct LevelZeroCallbackHelper {
-  std::vector<std::function<bool()>> callbacks;
-};
-
-// Tries to find a feasible solution to the current model.
-//
-// This function continues from the current state of the solver and loop until
-// all variables are instantiated (i.e. the next decision is kNoLiteralIndex) or
-// a search limit is reached. It uses the heuristic from the SearchHeuristics
-// class in the model to decide when to restart and what next decision to take.
-//
-// Each time a restart happen, this increment the policy index modulo the number
-// of heuristics to act as a portfolio search.
-SatSolver::Status SolveIntegerProblem(Model* model);
-
-// Resets the solver to the given assumptions before calling
-// SolveIntegerProblem().
-SatSolver::Status ResetAndSolveIntegerProblem(
-    const std::vector<Literal>& assumptions, Model* model);
-
-// Only used in tests. Move to a test utility file.
-//
-// This configures the model SearchHeuristics with a simple default heuristic
-// and then call ResetAndSolveIntegerProblem() without any assumptions.
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model);
-
 // Returns decision corresponding to var at its lower bound. Returns
 // kNoLiteralIndex if the variable is fixed.
-LiteralIndex AtMinValue(IntegerVariable var, IntegerTrail* integer_trail,
-                        IntegerEncoder* integer_encoder);
+LiteralIndex AtMinValue(IntegerVariable var, Model* model);
 
 // Returns decision corresponding to var >= lb + max(1, (ub - lb) / 2). It also
 // CHECKs that the variable is not fixed.
@@ -113,6 +40,14 @@ LiteralIndex SplitAroundGivenValue(IntegerVariable positive_var,
 // Returns decision corresponding to var <= round(lp_value). If the variable
 // does not appear in the LP, this method returns kNoLiteralIndex.
 LiteralIndex SplitAroundLpValue(IntegerVariable var, Model* model);
+
+struct SolutionDetails {
+  int64 solution_count = 0;
+  gtl::ITIVector<IntegerVariable, IntegerValue> best_solution;
+
+  // Loads the solution in best_solution using lower bounds from integer trail.
+  void LoadFromTrail(const IntegerTrail& integer_trail);
+};
 
 // Returns decision corresponding to var <= best_solution[var]. If no solution
 // has been found, this method returns kNoLiteralIndex. This was suggested in
@@ -225,6 +160,55 @@ std::vector<std::function<LiteralIndex()>> AddModelHeuristics(
 std::vector<std::function<LiteralIndex()>> CompleteHeuristics(
     const std::vector<std::function<LiteralIndex()>>& incomplete_heuristics,
     const std::function<LiteralIndex()>& completion_heuristic);
+
+// A wrapper around SatSolver::Solve that handles integer variable with lazy
+// encoding. Repeatedly calls SatSolver::Solve() on the model until the given
+// next_decision() function return kNoLiteralIndex or the model is proved to
+// be UNSAT.
+//
+// Returns the status of the last call to SatSolver::Solve().
+//
+// Note that the next_decision() function must always return an unassigned
+// literal or kNoLiteralIndex to end the search.
+SatSolver::Status SolveIntegerProblemWithLazyEncoding(
+    const std::vector<Literal>& assumptions,
+    const std::function<LiteralIndex()>& next_decision, Model* model);
+
+// Solves a problem with the given heuristics.
+// heuristics[i] will be used with restart_policies[i] only.
+SatSolver::Status SolveProblemWithPortfolioSearch(
+    std::vector<std::function<LiteralIndex()>> decision_policies,
+    std::vector<std::function<bool()>> restart_policies, Model* model);
+
+// Shortcut for SolveIntegerProblemWithLazyEncoding() when there is no
+// assumption and we consider all variables in their index order for the next
+// search decision.
+SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model);
+
+// Store relationship between the CpSolverResponse objective and the internal
+// IntegerVariable the solver tries to minimize.
+struct ObjectiveSynchronizationHelper {
+  double scaling_factor = 1.0;
+  double offset = 0.0;
+  IntegerVariable objective_var = kNoIntegerVariable;
+  std::function<double()> get_external_best_objective = nullptr;
+  std::function<double()> get_external_best_bound = nullptr;
+  std::function<void(double, double)> set_external_best_bound = nullptr;
+  bool parallel_mode = false;
+
+  int64 UnscaledObjective(double value) const {
+    return static_cast<int64>(std::round(value / scaling_factor - offset));
+  }
+  double ScaledObjective(int64 value) const {
+    return (value + offset) * scaling_factor;
+  }
+};
+
+// Callbacks that be called when the search goes back to level 0.
+// Callbacks should return false if the propagation fails.
+struct LevelZeroCallbackHelper {
+  std::vector<std::function<bool()>> callbacks;
+};
 
 // Prints out a new optimization solution in a fixed format.
 void LogNewSolution(const std::string& event_or_solution_count,

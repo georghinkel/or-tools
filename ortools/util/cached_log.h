@@ -15,7 +15,6 @@
 #define OR_TOOLS_UTIL_CACHED_LOG_H_
 
 #include <math.h>
-
 #include <vector>
 
 #include "ortools/base/basictypes.h"

@@ -18,7 +18,6 @@
 
 #include <cmath>
 #include <limits>
-
 #include "ortools/base/basictypes.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"

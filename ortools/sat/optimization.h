@@ -126,34 +126,44 @@ SatSolver::Status SolveWithCardinalityEncodingAndCore(
     std::vector<bool>* solution);
 
 // Model-based API, for now we just provide a basic algorithm that minimizes a
-// given IntegerVariable by solving a sequence of decision problem by using
-// SolveIntegerProblem().
+// given IntegerVariable by solving a sequence of decision problem.
 //
-// The feasible_solution_observer function will be called each time a new
-// feasible solution is found.
-SatSolver::Status MinimizeIntegerVariableWithLinearScanAndLazyEncoding(
+// The "observer" function will be called each time a new feasible solution is
+// found.
+SatSolver::Status MinimizeIntegerVariableWithLinearScan(
     IntegerVariable objective_var,
-    const std::function<void()>& feasible_solution_observer, Model* model);
+    const std::function<void(const Model&)>& feasible_solution_observer,
+    Model* model);
+
+// Same as MinimizeIntegerVariableWithLinearScan() but keep solving the problem
+// as long as next_decision() do not return kNoLiteralIndex and hence lazily
+// encode new variables. See the doc of SolveIntegerProblemWithLazyEncoding()
+// for more details.
+SatSolver::Status MinimizeIntegerVariableWithLinearScanAndLazyEncoding(
+    bool log_info, IntegerVariable objective_var,
+    const std::function<LiteralIndex()>& next_decision,
+    const std::function<void(const Model&)>& feasible_solution_observer,
+    Model* model);
 
 // Use a low conflict limit and performs a binary search to try to restrict the
 // domain of objective_var.
 void RestrictObjectiveDomainWithBinarySearch(
     IntegerVariable objective_var,
-    const std::function<void()>& feasible_solution_observer, Model* model);
+    const std::function<LiteralIndex()>& next_decision,
+    const std::function<void(const Model&)>& feasible_solution_observer,
+    Model* model);
 
 // Same as MinimizeIntegerVariableWithLinearScanAndLazyEncoding() but use
 // a core-based approach instead. Note that the given objective_var is just used
-// for reporting the lower-bound/upper-bound and do not need to be linked with
-// its linear representation.
-//
-// Unlike MinimizeIntegerVariableWithLinearScanAndLazyEncoding() this function
-// just return the last solver status. In particular if it is INFEASIBLE but
-// feasible_solution_observer() was called, it means we are at OPTIMAL.
+// for reporting the lower-bound and do not need to be linked with its linear
+// representation.
 SatSolver::Status MinimizeWithCoreAndLazyEncoding(
-    IntegerVariable objective_var,
+    bool log_info, IntegerVariable objective_var,
     const std::vector<IntegerVariable>& variables,
     const std::vector<IntegerValue>& coefficients,
-    const std::function<void()>& feasible_solution_observer, Model* model);
+    const std::function<LiteralIndex()>& next_decision,
+    const std::function<void(const Model&)>& feasible_solution_observer,
+    Model* model);
 
 // Generalization of the max-HS algorithm (HS stands for Hitting Set). This is
 // similar to MinimizeWithCoreAndLazyEncoding() but it uses a hybrid approach
@@ -170,9 +180,12 @@ SatSolver::Status MinimizeWithCoreAndLazyEncoding(
 // TODO(user): This function brings dependency to the SCIP MIP solver which is
 // quite big, maybe we should find a way not to do that.
 SatSolver::Status MinimizeWithHittingSetAndLazyEncoding(
-    IntegerVariable objective_var, std::vector<IntegerVariable> variables,
+    bool log_info, IntegerVariable objective_var,
+    std::vector<IntegerVariable> variables,
     std::vector<IntegerValue> coefficients,
-    const std::function<void()>& feasible_solution_observer, Model* model);
+    const std::function<LiteralIndex()>& next_decision,
+    const std::function<void(const Model&)>& feasible_solution_observer,
+    Model* model);
 
 }  // namespace sat
 }  // namespace operations_research

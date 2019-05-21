@@ -2,11 +2,6 @@
 set -x
 set -e
 
-if [ ! -f "$DOTNET_SNK" ]; then
-  echo "DOTNET_SNK: not found !" | tee build.log
-  exit 1
-fi
-
 # Clean everything
 make clean
 make clean_third_party
@@ -96,10 +91,10 @@ echo "DONE" | tee -a build.log
 #make test_python UNIX_PYTHON_VER=2
 #echo "make test_python2: DONE" | tee -a build.log
 echo -n "Build Python 2 wheel archive..." | tee -a build.log
-make python_package UNIX_PYTHON_VER=2
+make pypi_archive UNIX_PYTHON_VER=2
 echo "DONE" | tee -a build.log
 echo -n "Test Python 2 wheel archive..." | tee -a build.log
-make test_python_package UNIX_PYTHON_VER=2
+make test_pypi_archive UNIX_PYTHON_VER=2
 echo "DONE" | tee -a build.log
 
 cp temp_python2/ortools/dist/*.whl .
@@ -117,10 +112,10 @@ echo "DONE" | tee -a build.log
 #make test_python UNIX_PYTHON_VER=3
 #echo "make test_python3: DONE" | tee -a build.log
 echo -n "Build Python 3 wheel archive..." | tee -a build.log
-make python_package UNIX_PYTHON_VER=3
+make pypi_archive UNIX_PYTHON_VER=3
 echo "DONE" | tee -a build.log
 echo -n "Test Python 3 wheel archive..." | tee -a build.log
-make test_python_package UNIX_PYTHON_VER=3
+make test_pypi_archive UNIX_PYTHON_VER=3
 echo "DONE" | tee -a build.log
 
 cp temp_python3/ortools/dist/*.whl .

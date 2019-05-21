@@ -30,21 +30,13 @@ DEFINE_INDEX_TYPE_TYPEDEF(operations_research::RoutingNodeIndex,
 %ignoreall
 
 %unignore operations_research;
-
-namespace operations_research {
-
-%unignore RoutingIndexManager;
-%unignore RoutingIndexManager::IndexToNode(int64);
-%unignore RoutingIndexManager::NodeToIndex(NodeIndex);
-%unignore RoutingIndexManager::NodesToIndices(const std::vector<NodeIndex>&);
-%unignore RoutingIndexManager::RoutingIndexManager(int, int, NodeIndex);
-%unignore RoutingIndexManager::RoutingIndexManager(int, int, const std::vector<NodeIndex>&, const std::vector<NodeIndex>&);
-%rename (getNumberOfNodes) RoutingIndexManager::num_nodes;
-%rename (getNumberOfVehicles) RoutingIndexManager::num_vehicles;
-%rename (getNumberOfIndices) RoutingIndexManager::num_indices;
-%unignore RoutingIndexManager::~RoutingIndexManager;
-
-}  // namespace operations_research
+%unignore operations_research::RoutingIndexManager;
+%unignore operations_research::RoutingIndexManager::IndexToNode(int64);
+%unignore operations_research::RoutingIndexManager::NodeToIndex(NodeIndex);
+%unignore operations_research::RoutingIndexManager::NodesToIndices(const std::vector<NodeIndex>&);
+%unignore operations_research::RoutingIndexManager::RoutingIndexManager(int, int, NodeIndex);
+%unignore operations_research::RoutingIndexManager::RoutingIndexManager(int, int, const std::vector<NodeIndex>&, const std::vector<NodeIndex>&);
+%unignore operations_research::RoutingIndexManager::~RoutingIndexManager;
 
 %include "ortools/constraint_solver/routing_index_manager.h"
 

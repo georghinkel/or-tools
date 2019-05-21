@@ -9,9 +9,6 @@ cc_library(
         "logging.h",
         "macros.h",
     ],
-    srcs = [
-        "logging.cc",
-    ],
     deps = [
         "@com_github_gflags_gflags//:gflags",
         "@com_github_glog_glog//:glog",
@@ -46,28 +43,6 @@ cc_library(
     deps = [
         ":base",
         ":status",
-    ],
-)
-
-cc_library(
-    name = "status_macros",
-    hdrs = [
-        "status_macros.h",
-    ],
-    deps = [
-        ":base",
-        ":status",
-        ":statusor",
-    ],
-)
-
-cc_library(
-    name = "int128",
-    hdrs = [
-        "int128.h",
-    ],
-    deps = [
-        "@com_google_absl//absl/numeric:int128",
     ],
 )
 
@@ -250,13 +225,6 @@ cc_library(
     name = "canonical_errors",
     hdrs = [
         "canonical_errors.h",
-    ],
-)
-
-cc_library(
-    name = "protobuf_util",
-    hdrs = [
-        "protobuf_util.h",
     ],
 )
 

@@ -34,7 +34,6 @@ class LPSolver {
   // See the proto for an extensive documentation.
   void SetParameters(const GlopParameters& parameters);
   const GlopParameters& GetParameters() const;
-  GlopParameters* GetMutableParameters();
 
   // Solves the given linear program and returns the solve status. See the
   // ProblemStatus documentation for a description of the different values.

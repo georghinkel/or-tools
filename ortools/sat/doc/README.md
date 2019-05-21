@@ -3,8 +3,6 @@
 
 # Using the CP-SAT solver
 
-
-
 ## Documentation structure
 
 This document presents modeling recipes for the CP-SAT solver.
@@ -92,7 +90,7 @@ void SimpleSatProgram() {
   cp_model.AddNotEqual(x, y);
 
   // Solving part.
-  const CpSolverResponse response = Solve(cp_model.Build());
+  const CpSolverResponse response = Solve(cp_model);
   LOG(INFO) << CpSolverResponseStats(response);
 
   if (response.status() == CpSolverStatus::FEASIBLE) {

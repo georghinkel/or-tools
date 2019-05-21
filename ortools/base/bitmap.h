@@ -15,7 +15,6 @@
 #define OR_TOOLS_BASE_BITMAP_H_
 
 #include <string.h>
-
 #include "ortools/base/basictypes.h"
 
 namespace operations_research {

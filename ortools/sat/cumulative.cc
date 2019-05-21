@@ -34,8 +34,8 @@ namespace sat {
 std::function<void(Model*)> Cumulative(
     const std::vector<IntervalVariable>& vars,
     const std::vector<IntegerVariable>& demand_vars,
-    const IntegerVariable& capacity, SchedulingConstraintHelper* helper) {
-  return [=](Model* model) mutable {
+    const IntegerVariable& capacity) {
+  return [=](Model* model) {
     if (vars.empty()) return;
 
     IntervalsRepository* intervals = model->GetOrCreate<IntervalsRepository>();
@@ -123,10 +123,9 @@ std::function<void(Model*)> Cumulative(
     Trail* trail = model->GetOrCreate<Trail>();
     IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
 
-    if (helper == nullptr) {
-      helper = new SchedulingConstraintHelper(vars, model);
-      model->TakeOwnership(helper);
-    }
+    SchedulingConstraintHelper* helper =
+        new SchedulingConstraintHelper(vars, model);
+    model->TakeOwnership(helper);
 
     // Propagator responsible for applying Timetabling filtering rule. It
     // increases the minimum of the start variables, decrease the maximum of the
@@ -162,7 +161,7 @@ std::function<void(Model*)> Cumulative(
 std::function<void(Model*)> CumulativeTimeDecomposition(
     const std::vector<IntervalVariable>& vars,
     const std::vector<IntegerVariable>& demand_vars,
-    const IntegerVariable& capacity_var, SchedulingConstraintHelper* helper) {
+    const IntegerVariable& capacity_var) {
   return [=](Model* model) {
     CHECK(model->Get(IsFixed(capacity_var)));
 

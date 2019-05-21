@@ -103,7 +103,6 @@ class SatHelper {
   //    C# protobufs do not support proto2.
   static operations_research::sat::CpSolverResponse Solve(
       const operations_research::sat::CpModelProto& model_proto) {
-    FixFlagsAndEnvironmentForSwig();
     Model model;
     std::atomic<bool> stopped(false);
     model.GetOrCreate<TimeLimit>()->RegisterExternalBooleanAsLimit(&stopped);
@@ -116,7 +115,6 @@ class SatHelper {
   static operations_research::sat::CpSolverResponse SolveWithParameters(
       const operations_research::sat::CpModelProto& model_proto,
       const operations_research::sat::SatParameters& parameters) {
-    FixFlagsAndEnvironmentForSwig();
     Model model;
     model.Add(NewSatParameters(parameters));
     std::atomic<bool> stopped(false);
@@ -130,7 +128,6 @@ class SatHelper {
   static operations_research::sat::CpSolverResponse SolveWithStringParameters(
       const operations_research::sat::CpModelProto& model_proto,
       const std::string& parameters) {
-    FixFlagsAndEnvironmentForSwig();
     Model model;
     model.Add(NewSatParameters(parameters));
     std::atomic<bool> stopped(false);
@@ -146,7 +143,6 @@ class SatHelper {
       const operations_research::sat::CpModelProto& model_proto,
       const operations_research::sat::SatParameters& parameters,
       const SolutionCallback& callback) {
-    FixFlagsAndEnvironmentForSwig();
     Model model;
     model.Add(NewSatParameters(parameters));
     model.Add(NewFeasibleSolutionObserver(
@@ -163,7 +159,6 @@ class SatHelper {
   SolveWithStringParametersAndSolutionCallback(
       const operations_research::sat::CpModelProto& model_proto,
       const std::string& parameters, const SolutionCallback& callback) {
-    FixFlagsAndEnvironmentForSwig();
     Model model;
     model.Add(NewSatParameters(parameters));
     model.Add(NewFeasibleSolutionObserver(

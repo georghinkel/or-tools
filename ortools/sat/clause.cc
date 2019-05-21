@@ -48,14 +48,13 @@ void RemoveIf(Container c, Predicate p) {
 
 // ----- LiteralWatchers -----
 
-LiteralWatchers::LiteralWatchers(Model* model)
+LiteralWatchers::LiteralWatchers()
     : SatPropagator("LiteralWatchers"),
+      is_clean_(true),
       num_inspected_clauses_(0),
       num_inspected_clause_literals_(0),
       num_watched_clauses_(0),
-      stats_("LiteralWatchers") {
-  model->GetOrCreate<Trail>()->RegisterPropagator(this);
-}
+      stats_("LiteralWatchers") {}
 
 LiteralWatchers::~LiteralWatchers() {
   gtl::STLDeleteElements(&clauses_);
@@ -194,7 +193,7 @@ SatClause* LiteralWatchers::ReasonClause(int trail_index) const {
   return reasons_[trail_index];
 }
 
-bool LiteralWatchers::AddClause(absl::Span<const Literal> literals,
+bool LiteralWatchers::AddClause(const std::vector<Literal>& literals,
                                 Trail* trail) {
   SatClause* clause = SatClause::Create(literals);
   clauses_.push_back(clause);
@@ -999,7 +998,7 @@ std::vector<Literal> BinaryImplicationGraph::ExpandAtMostOne(
 // ----- SatClause -----
 
 // static
-SatClause* SatClause::Create(absl::Span<const Literal> literals) {
+SatClause* SatClause::Create(const std::vector<Literal>& literals) {
   CHECK_GE(literals.size(), 2);
   SatClause* clause = reinterpret_cast<SatClause*>(
       ::operator new(sizeof(SatClause) + literals.size() * sizeof(Literal)));

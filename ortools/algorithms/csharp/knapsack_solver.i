@@ -18,7 +18,9 @@
 %include "std_vector.i"
 
 %include "ortools/base/base.i"
-%include "ortools/util/csharp/vector.i"
+
+/* allow partial c# classes */
+%typemap(csclassmodifiers) SWIGTYPE "public partial class"
 
 // Include the file we want to wrap a first time.
 %{
@@ -33,8 +35,6 @@ typedef uint64_t uint64;
 // the template instantiation of std::vector<> differently.
 %template(KInt64Vector) std::vector<int64>;
 %template(KInt64VectorVector) std::vector<std::vector<int64> >;
-VECTOR_AS_CSHARP_ARRAY(int64, int64, long, KInt64Vector);
-REGULAR_MATRIX_AS_CSHARP_ARRAY(int64, int64, long, KInt64VectorVector);
 
 %rename (UseReduction) operations_research::KnapsackSolver::use_reduction;
 %rename (SetUseReduction) operations_research::KnapsackSolver::set_use_reduction;

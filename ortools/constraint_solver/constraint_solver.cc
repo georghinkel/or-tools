@@ -23,15 +23,15 @@
 #include <memory>
 #include <string>
 #include <utility>
-
 #include "absl/memory/memory.h"
+#include "ortools/base/random.h"
+
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/file.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/random.h"
 #include "ortools/base/recordio.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
@@ -945,7 +945,6 @@ class Search {
         marker_stack_(),
         fail_buffer_(),
         solution_counter_(0),
-        unchecked_solution_counter_(0),
         decision_builder_(nullptr),
         created_by_solve_(false),
         search_depth_(0),
@@ -964,7 +963,6 @@ class Search {
         marker_stack_(),
         fail_buffer_(),
         solution_counter_(0),
-        unchecked_solution_counter_(0),
         decision_builder_(nullptr),
         created_by_solve_(false),
         search_depth_(-1),
@@ -996,7 +994,6 @@ class Search {
   bool AcceptDelta(Assignment* delta, Assignment* deltadelta);
   void AcceptNeighbor();
   void AcceptUncheckedNeighbor();
-  bool IsUncheckedSolutionLimitReached();
   void PeriodicCheck();
   int ProgressPercent();
   void Accept(ModelVisitor* const visitor) const;
@@ -1004,10 +1001,6 @@ class Search {
   void Clear();
   void IncrementSolutionCounter() { ++solution_counter_; }
   int64 solution_counter() const { return solution_counter_; }
-  void IncrementUncheckedSolutionCounter() { ++unchecked_solution_counter_; }
-  int64 unchecked_solution_counter() const {
-    return unchecked_solution_counter_;
-  }
   void set_decision_builder(DecisionBuilder* const db) {
     decision_builder_ = db;
   }
@@ -1059,7 +1052,6 @@ class Search {
   std::vector<SearchMonitor*> monitors_;
   jmp_buf fail_buffer_;
   int64 solution_counter_;
-  int64 unchecked_solution_counter_;
   DecisionBuilder* decision_builder_;
   bool created_by_solve_;
   Solver::BranchSelector selector_;
@@ -1192,7 +1184,6 @@ void Search::EnterSearch() {
   // leaving search. This enables the information to persist outside of
   // top-level search.
   solution_counter_ = 0;
-  unchecked_solution_counter_ = 0;
 
   ForAll(monitors_, &SearchMonitor::EnterSearch);
 }
@@ -1299,15 +1290,6 @@ void Search::AcceptNeighbor() {
 
 void Search::AcceptUncheckedNeighbor() {
   ForAll(monitors_, &SearchMonitor::AcceptUncheckedNeighbor);
-}
-
-bool Search::IsUncheckedSolutionLimitReached() {
-  for (SearchMonitor* const monitor : monitors_) {
-    if (monitor->IsUncheckedSolutionLimitReached()) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void Search::PeriodicCheck() {
@@ -1505,27 +1487,9 @@ std::string Solver::DebugString() const {
 
 int64 Solver::MemoryUsage() { return GetProcessMemoryUsage(); }
 
-int64 Solver::wall_time() const {
-  return absl::ToInt64Milliseconds(timer_->GetDuration());
-}
-
-absl::Time Solver::Now() const {
-  return absl::FromUnixSeconds(0) + timer_->GetDuration();
-}
+int64 Solver::wall_time() const { return timer_->GetInMs(); }
 
 int64 Solver::solutions() const { return TopLevelSearch()->solution_counter(); }
-
-int64 Solver::unchecked_solutions() const {
-  return TopLevelSearch()->unchecked_solution_counter();
-}
-
-void Solver::IncrementUncheckedSolutionCounter() {
-  TopLevelSearch()->IncrementUncheckedSolutionCounter();
-}
-
-bool Solver::IsUncheckedSolutionLimitReached() {
-  return TopLevelSearch()->IsUncheckedSolutionLimitReached();
-}
 
 void Solver::TopPeriodicCheck() { TopLevelSearch()->PeriodicCheck(); }
 

@@ -13,7 +13,6 @@
 
 using System;
 using Google.OrTools.Sat;
-using Google.OrTools.Util;
 
 public class VarArraySolutionPrinter : CpSolverSolutionCallback
 {

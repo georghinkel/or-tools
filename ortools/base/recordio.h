@@ -16,7 +16,6 @@
 
 #include <memory>
 #include <string>
-
 #include "ortools/base/file.h"
 
 // This file defines some IO interfaces to compatible with Google

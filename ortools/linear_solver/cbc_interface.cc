@@ -53,14 +53,6 @@ class CBCInterface : public MPSolverInterface {
   // Sets the optimization direction (min/max).
   void SetOptimizationDirection(bool maximize) override;
 
-  // ----- Parameters -----
-
-  util::Status SetNumThreads(int num_threads) override {
-    CHECK_GE(num_threads, 1);
-    num_threads_ = num_threads;
-    return util::OkStatus();
-  }
-
   // ----- Solve -----
   // Solve the problem using the parameter values specified.
   MPSolver::ResultStatus Solve(const MPSolverParameters& param) override;
@@ -154,7 +146,6 @@ class CBCInterface : public MPSolverInterface {
   double best_objective_bound_;
   // Special way to handle the relative MIP gap parameter.
   double relative_mip_gap_;
-  int num_threads_ = 1;
 };
 
 // ----- Solver -----
@@ -384,10 +375,7 @@ MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
   // through callCbc.
   model.setAllowableFractionGap(relative_mip_gap_);
   // NOTE: Trailing space is required to avoid buffer overflow in cbc.
-  int return_status =
-      num_threads_ == 1
-          ? callCbc("-solve ", model)
-          : callCbc(absl::StrCat("-threads ", num_threads_, " -solve "), model);
+  int return_status = callCbc("-solve ", model);
   const int kBadReturnStatus = 777;
   CHECK_NE(kBadReturnStatus, return_status);  // Should never happen according
                                               // to the CBC source

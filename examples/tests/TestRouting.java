@@ -21,10 +21,12 @@ import com.google.ortools.constraintsolver.RoutingSearchParameters;
 import com.google.ortools.constraintsolver.main;
 
 /** Tests the Routing java interface. */
-public class TestRoutingSolver {
-  static { System.loadLibrary("jniortools"); }
+public class TestRouting {
+  static {
+    System.loadLibrary("jniortools");
+  }
 
-  private static final Logger logger = Logger.getLogger(TestRoutingSolver.class.getName());
+  private static final Logger logger = Logger.getLogger(TestRouting.class.getName());
 
   static void testRoutingTransitCallback(boolean enableGC) {
     logger.info("testRoutingTransitCallback (enable gc:" + enableGC + ")...");

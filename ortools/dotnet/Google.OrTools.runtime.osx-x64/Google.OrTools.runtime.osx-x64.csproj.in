@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <RuntimeIdentifier>osx-x64</RuntimeIdentifier>
     <AssemblyName>Google.OrTools</AssemblyName>
     <Version>@PROJECT_VERSION@</Version>
@@ -39,6 +39,9 @@
 
   <ItemGroup>
     <Compile Include="../../gen/ortools/algorithms/*.cs">
+      <Link>algorithms/%(Filename)%(Extension)</Link>
+    </Compile>
+    <Compile Include="../../algorithms/csharp/*.cs">
       <Link>algorithms/%(Filename)%(Extension)</Link>
     </Compile>
 
@@ -91,6 +94,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.7.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.6.1" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Methods for building and solving CP-SAT models."""
+"""Propose a natural language on top of cp_model_pb2 python proto.
+
+This file implements a easy-to-use API on top of the cp_model_pb2 protobuf
+defined in ../ .
+"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -25,9 +29,6 @@ from ortools.sat import cp_model_pb2
 from ortools.sat import sat_parameters_pb2
 from ortools.sat.python import cp_model_helper
 from ortools.sat import pywrapsat
-from ortools.util import sorted_interval_list
-
-Domain = sorted_interval_list.Domain
 
 # The classes below allow linear expressions to be expressed naturally with the
 # usual arithmetic operators +-*/ and with constant numbers, which makes the
@@ -65,17 +66,6 @@ AUTOMATIC_SEARCH = sat_parameters_pb2.SatParameters.AUTOMATIC_SEARCH
 FIXED_SEARCH = sat_parameters_pb2.SatParameters.FIXED_SEARCH
 PORTFOLIO_SEARCH = sat_parameters_pb2.SatParameters.PORTFOLIO_SEARCH
 LP_SEARCH = sat_parameters_pb2.SatParameters.LP_SEARCH
-"""The following sections describe methods for building and solving
-CP-SAT models, and related tasks:
-
-* [Create model](#ortools.sat.python.cp_model.CpModel): Methods for creating
-models, including variables and constraints.
-* [Solve](#ortools.sat.python.cp_model.CpSolver): Methods for solving
-a model and evaluating solutions.
-* [Solution callback](#ortools.sat.python.cp_model.CpSolverSolutionCallback):
-Create a callback that is invoked every time the solver finds a new solution.
-* [Solution printer](#ortools.sat.python.cp_model.ObjectiveSolutionPrinter):
-Print objective values and elapsed time for intermediate solutions."""
 
 
 def DisplayBounds(bounds):
@@ -339,12 +329,12 @@ class IntVar(LinearExpression):
   model is feasible, or optimal if you provided an objective function.
   """
 
-    def __init__(self, model, domain, name):
+    def __init__(self, model, bounds, name):
         """See CpModel.NewIntVar below."""
         self.__model = model
         self.__index = len(model.variables)
         self.__var = model.variables.add()
-        self.__var.domain.extend(domain.FlattenedIntervals())
+        self.__var.domain.extend(bounds)
         self.__var.name = name
         self.__negation = None
 
@@ -561,11 +551,11 @@ class IntervalVar(object):
 
 
 class CpModel(object):
-    """Methods for building a CP model.
+    """Wrapper class around the cp_model proto.
 
-  Methods beginning with:
-  * ```New``` create integer, boolean, or interval variables.
-  * ```Add``` create new constraints and add them to the model.
+  This class provides two types of methods:
+    - NewXXX to create integer, boolean, or interval variables.
+    - AddXXX to create new constraints and add them to the model.
   """
 
     def __init__(self):
@@ -576,71 +566,79 @@ class CpModel(object):
     # Integer variable.
 
     def NewIntVar(self, lb, ub, name):
-        """Create an integer variable with domain [lb, ub]."""
-        return IntVar(self.__model, Domain(lb, ub), name)
+        """Creates an integer variable with domain [lb, ub]."""
+        return IntVar(self.__model, [lb, ub], name)
 
-    def NewIntVarFromDomain(self, domain, name):
-        """Create an integer variable from a list of intervals.
+    def NewEnumeratedIntVar(self, bounds, name):
+        """Creates an integer variable with an enumerated domain.
 
     Args:
-        domain: A instance of the Domain class.
+        bounds: A flattened list of disjoint intervals.
         name: The name of the variable.
 
     Returns:
-        a variable whose domain is the given domain.
+        a variable whose domain is union[bounds[2*i]..bounds[2*i + 1]].
+
+    To create a variable with domain [1, 2, 3, 5, 7, 8], pass in the
+    array [1, 3, 5, 5, 7, 8].
     """
-        return IntVar(self.__model, domain, name)
+        return IntVar(self.__model, bounds, name)
 
     def NewBoolVar(self, name):
         """Creates a 0-1 variable with the given name."""
-        return IntVar(self.__model, Domain(0, 1), name)
+        return IntVar(self.__model, [0, 1], name)
 
-    # Linear constraints.
+    # Integer constraints.
 
-    def AddLinearConstraint(self, linear_expr, lb, ub):
-        """Adds the constraint: lb <= linear_expr <= ub."""
-        return self.AddLinearExpressionInDomain(linear_expr, Domain(lb, ub))
+    def AddLinearConstraint(self, terms, lb, ub):
+        """Adds the constraints lb <= sum(terms) <= ub, where term = (var, coef)."""
+        ct = Constraint(self.__model.constraints)
+        model_ct = self.__model.constraints[ct.Index()]
+        for t in terms:
+            if not isinstance(t[0], IntVar):
+                raise TypeError('Wrong argument' + str(t))
+            cp_model_helper.AssertIsInt64(t[1])
+            model_ct.linear.vars.append(t[0].Index())
+            model_ct.linear.coeffs.append(t[1])
+        model_ct.linear.domain.extend([lb, ub])
+        return ct
 
-    def AddLinearExpressionInDomain(self, linear_expr, domain):
-        """Add the constraint: linear_expr in domain."""
-        if isinstance(linear_expr, LinearExpression):
-            ct = Constraint(self.__model.constraints)
-            model_ct = self.__model.constraints[ct.Index()]
-            coeffs_map, constant = linear_expr.GetVarValueMap()
-            for t in iteritems(coeffs_map):
-                if not isinstance(t[0], IntVar):
-                    raise TypeError('Wrong argument' + str(t))
-                cp_model_helper.AssertIsInt64(t[1])
-                model_ct.linear.vars.append(t[0].Index())
-                model_ct.linear.coeffs.append(t[1])
-            model_ct.linear.domain.extend([
-                cp_model_helper.CapSub(x, constant)
-                for x in domain.FlattenedIntervals()
-            ])
-            return ct
-        elif isinstance(linear_expr, numbers.Integral):
-            if not domain.Contains(linear_expr):
-                return self.AddBoolOr([])  # Evaluate to false.
-            # Nothing to do otherwise.
-        else:
-            raise TypeError(
-                'Not supported: CpModel.AddLinearExpressionInDomain(' +
-                str(linear_expr) + ' ' + str(domain) + ')')
+    def AddSumConstraint(self, variables, lb, ub):
+        """Adds the constraints lb <= sum(variables) <= ub."""
+        ct = Constraint(self.__model.constraints)
+        model_ct = self.__model.constraints[ct.Index()]
+        for v in variables:
+            model_ct.linear.vars.append(v.Index())
+            model_ct.linear.coeffs.append(1)
+        model_ct.linear.domain.extend([lb, ub])
+        return ct
+
+    def AddLinearConstraintWithBounds(self, terms, bounds):
+        """Adds the constraints sum(terms) in bounds, where term = (var, coef)."""
+        ct = Constraint(self.__model.constraints)
+        model_ct = self.__model.constraints[ct.Index()]
+        for t in terms:
+            if not isinstance(t[0], IntVar):
+                raise TypeError('Wrong argument' + str(t))
+            cp_model_helper.AssertIsInt64(t[1])
+            model_ct.linear.vars.append(t[0].Index())
+            model_ct.linear.coeffs.append(t[1])
+        model_ct.linear.domain.extend(bounds)
+        return ct
 
     def Add(self, ct):
         """Adds a LinearInequality to the model."""
         if isinstance(ct, LinearInequality):
-            return self.AddLinearExpressionInDomain(ct.Expression(),
-                                                    Domain.FromFlatIntervals(
-                                                        ct.Bounds()))
+            coeffs_map, constant = ct.Expression().GetVarValueMap()
+            bounds = [cp_model_helper.CapSub(x, constant) for x in ct.Bounds()]
+            return self.AddLinearConstraintWithBounds(
+                iteritems(coeffs_map), bounds)
         elif ct and isinstance(ct, bool):
             pass  # Nothing to do, was already evaluated to true.
         elif not ct and isinstance(ct, bool):
             return self.AddBoolOr([])  # Evaluate to false.
         else:
             raise TypeError('Not supported: CpModel.Add(' + str(ct) + ')')
-
-    # General Integer Constraints.
 
     def AddAllDifferent(self, variables):
         """Adds AllDifferent(variables).
@@ -1497,10 +1495,6 @@ class CpSolver(object):
     def ResponseStats(self):
         """Returns some statistics on the solution found as a string."""
         return pywrapsat.SatHelper.SolverResponseStats(self.__solution)
-
-    def ResponseProto(self):
-        """Returns the response object."""
-        return self.__solution
 
 
 class CpSolverSolutionCallback(pywrapsat.SolutionCallback):

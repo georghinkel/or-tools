@@ -11,6 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// SWIG Macros to use std::vector<Num> and const std::vector<Num>& in Java,
+// where Num is an atomic numeric type.
+//
+// Normally we'd simply use %include "std_vector.i" with the %template
+// directive (see http://www.swig.org/Doc1.3/Library.html#Library_nn15), but
+// in google3 we can't, because exceptions are forbidden.
+
 %include "stdint.i"
 
 %include "ortools/base/base.i"
@@ -43,14 +50,11 @@
 %}
 %typemap(csout, excode=SWIGEXCODE) const std::vector<TYPE>& {
   global::System.IntPtr cPtr = $imcall;$excode
-  ARRAYTYPE tmpVector = null;
+  ARRAYTYPE ret = null;
   if (cPtr != global::System.IntPtr.Zero) {
-    tmpVector = new ARRAYTYPE(cPtr, true);
-    CSHARPTYPE[] outArray = new CSHARPTYPE[tmpVector.Count];
-    tmpVector.CopyTo(outArray);
-    return outArray;
+    ret = new ARRAYTYPE(cPtr, true);
   }
-  return null;
+  return ret;
 }
 // Now, we do it for std::vector<>.
 %typemap(cstype) std::vector<TYPE> %{ CSHARPTYPE[] %}
@@ -70,21 +74,18 @@
 %}
 %typemap(csout, excode=SWIGEXCODE) std::vector<TYPE> {
   global::System.IntPtr cPtr = $imcall;$excode
-  ARRAYTYPE tmpVector = null;
+  ARRAYTYPE ret = null;
   if (cPtr != global::System.IntPtr.Zero) {
-    tmpVector = new ARRAYTYPE(cPtr, true);
-    CSHARPTYPE[] outArray = new CSHARPTYPE[tmpVector.Count];
-    tmpVector.CopyTo(outArray);
-    return outArray;
+    ret = new ARRAYTYPE(cPtr, true);
   }
-  return null;
+  return ret;
 }
 %enddef // VECTOR_AS_CSHARP_ARRAY
 
 // Typemaps to represent arguments of types "const std::vector<std::vector<TYPE>>&" or
 // "std::vector<std::vector<TYPE>>*" as CSHARPTYPE[][].
 // note: TYPE must be a primitive data type (PDT).
-%define JAGGED_MATRIX_AS_CSHARP_ARRAY(TYPE, CTYPE, CSHARPTYPE, ARRAYTYPE)
+%define MATRIX_AS_CSHARP_ARRAY(TYPE, CTYPE, CSHARPTYPE, ARRAYTYPE)
 // This part is for const std::vector<std::vector<>>&.
 %typemap(cstype) const std::vector<std::vector<TYPE> >&  %{ CSHARPTYPE[][] %}
 %typemap(csin)   const std::vector<std::vector<TYPE> >&  %{
@@ -144,68 +145,5 @@
   }
   $1 = &result;
 %}
-%enddef // JAGGED_MATRIX_AS_CSHARP_ARRAY
+%enddef // MATRIX_AS_CSHARP_ARRAY
 
-// "std::vector<std::vector<TYPE>>*" as CSHARPTYPE[,].
-// note: TYPE must be a primitive data type (PDT).
-%define REGULAR_MATRIX_AS_CSHARP_ARRAY(TYPE, CTYPE, CSHARPTYPE, ARRAYTYPE)
-// This part is for const std::vector<std::vector<>>&.
-%typemap(cstype) const std::vector<std::vector<TYPE> >&  %{ CSHARPTYPE[,] %}
-%typemap(csin)   const std::vector<std::vector<TYPE> >&  %{
-  $csinput.GetLength(0),
-  $csinput.GetLength(1),
-  NestedArrayHelper.GetFlatArrayFromMatrix($csinput)
-%}
-%typemap(imtype, out="global::System.IntPtr") const std::vector<std::vector<TYPE> >&  %{
-  int len$argnum##_1, int len$argnum##_2, CSHARPTYPE[]
-%}
-%typemap(ctype, out="void*")  const std::vector<std::vector<TYPE> >&  %{
-  int len$argnum##_1, int len$argnum##_2, CTYPE*
-%}
-%typemap(in) const std::vector<std::vector<TYPE> >&  (std::vector<std::vector<TYPE> > result) %{
-  result.clear();
-  result.resize(len$argnum##_1);
-
-  TYPE* inner_array = reinterpret_cast<TYPE*>($input);
-  int actualIndex = 0;
-  for (int index1 = 0; index1 < len$argnum##_1; ++index1) {
-    result[index1].reserve(len$argnum##_2);
-    for (int index2 = 0; index2 < len$argnum##_2; ++index2) {
-      const TYPE value = inner_array[actualIndex];
-      result[index1].emplace_back(value);
-      actualIndex++;
-    }
-  }
-
-  $1 = &result;
-%}
-// Now, we do it for std::vector<std::vector<>>*.
-%typemap(cstype) std::vector<std::vector<TYPE> >*  %{ CSHARPTYPE[,] %}
-%typemap(csin)   std::vector<std::vector<TYPE> >*  %{
-  $csinput.GetLength(0),
-  $csinput.GetLength(1),
-  NestedArrayHelper.GetFlatArrayFromMatrix($csinput)
-%}
-%typemap(imtype, out="global::System.IntPtr") std::vector<std::vector<TYPE> >*  %{
-  int len$argnum##_1, int len$argnum##_2, CSHARPTYPE[]
-%}
-%typemap(ctype, out="void*")  std::vector<std::vector<TYPE> >*  %{
-  int len$argnum##_1, int len$argnum##_2, CTYPE*
-%}
-%typemap(in) std::vector<std::vector<TYPE> >*  (std::vector<std::vector<TYPE> > result) %{
-  result.clear();
-  result.resize(len$argnum##_1);
-
-  TYPE* flat_array = reinterpret_cast<TYPE*>($input);
-  int actualIndex = 0;
-  for (int index1 = 0; index1 < len$argnum##_1; ++index1) {
-    result[index1].reserve(len$argnum##_2);
-    for (int index2 = 0; index2 < len$argnum##_2; ++index2) {
-      const TYPE value = flat_array[actualIndex];
-      result[index1].emplace_back(value);
-      actualIndex++;
-    }
-  }
-  $1 = &result;
-%}
-%enddef // REGULAR_MATRIX_AS_CSHARP_ARRAY

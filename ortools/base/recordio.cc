@@ -12,12 +12,9 @@
 // limitations under the License.
 
 #include "ortools/base/recordio.h"
-
 #include <zlib.h>
-
 #include <memory>
 #include <string>
-
 #include "ortools/base/logging.h"
 
 namespace recordio {

@@ -91,11 +91,11 @@ namespace sat {
 
 // The minimal value of an envelope, for instance the envelope the empty set.
 template <typename IntegerType>
-constexpr IntegerType IntegerTypeMinimumValue() {
+inline const IntegerType IntegerTypeMinimumValue() {
   return std::numeric_limits<IntegerType>::min();
 }
 template <>
-constexpr IntegerValue IntegerTypeMinimumValue() {
+inline const IntegerValue IntegerTypeMinimumValue() {
   return kMinIntegerValue;
 }
 

@@ -15,7 +15,6 @@
 // the linear_solver.proto format.
 
 #include <stdio.h>
-
 #include <string>
 
 #include "absl/strings/match.h"
@@ -65,7 +64,9 @@ using operations_research::glop::ToDouble;
 void ReadGlopParameters(GlopParameters* parameters) {
   if (!FLAGS_params_file.empty()) {
     std::string params;
-    CHECK(TextFormat::ParseFromString(params, parameters)) << params;
+    CHECK_OK(file::GetContents(FLAGS_params_file, &params, file::Defaults()));
+    CHECK(TextFormat::MergeFromString(params, parameters))
+        << FLAGS_params;
   }
   if (!FLAGS_params.empty()) {
     CHECK(TextFormat::MergeFromString(FLAGS_params, parameters))
@@ -93,10 +94,9 @@ int main(int argc, char* argv[]) {
     operations_research::MPModelProto model_proto;
     if (absl::EndsWith(file_name, ".mps") ||
         absl::EndsWith(file_name, ".mps.gz")) {
-      const util::Status parse_status =
-          mps_reader.ParseFile(file_name, &linear_program);
-      if (!parse_status.ok()) {
-        LOG(INFO) << "Parse error for " << file_name << ": " << parse_status;
+      if (!mps_reader.LoadFileAndTryFreeFormOnFail(file_name,
+                                                   &linear_program)) {
+        LOG(INFO) << "Parse error for " << file_name;
         continue;
       }
     } else {
@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
       if (FLAGS_mps_display_full_path) {
         printf("%s,", file_name.c_str());
       }
-      printf("%s,", linear_program.name().c_str());
+      printf("%s,", mps_reader.GetProblemName().c_str());
       if (FLAGS_mps_solve) {
         printf("%15.15e,%s,%-6.4g,", objective_value, status_string.c_str(),
                solving_time_in_sec);
@@ -139,7 +139,8 @@ int main(int argc, char* argv[]) {
       if (FLAGS_mps_display_full_path) {
         printf("%-45s: %s\n", "File path", file_name.c_str());
       }
-      printf("%-45s: %s\n", "Problem name", linear_program.name().c_str());
+      printf("%-45s: %s\n", "Problem name",
+             mps_reader.GetProblemName().c_str());
       if (FLAGS_mps_solve) {
         printf("%-45s: %15.15e\n", "Objective value", objective_value);
         printf("%-45s: %s\n", "Problem status", status_string.c_str());

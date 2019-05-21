@@ -15,9 +15,7 @@
 #define OR_TOOLS_BASE_JNIUTIL_H_
 
 #include <jni.h>
-
 #include <string>
-
 #include "ortools/base/logging.h"
 
 class JNIUtil {

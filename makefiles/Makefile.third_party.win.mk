@@ -36,14 +36,14 @@ SWIG_BINARY = $(WINDOWS_SWIG_BINARY)
 ZLIB_TAG = 1.2.11
 ZLIB_ARCHIVE_TAG = 1211
 GFLAGS_TAG = 2.2.2
-GLOG_TAG = 0.4.0
-PROTOBUF_TAG = 3.7.1
+GLOG_TAG = 0.3.5
+PROTOBUF_TAG = 3.6.1
 ABSL_TAG = bf29470
-CBC_TAG = 2.10.1
-CGL_TAG = 0.60.1
-CLP_TAG = 1.17.1
-OSI_TAG = 0.108.1
-COINUTILS_TAG = 2.11.1
+CBC_TAG = 2.9.9
+CGL_TAG = 0.59.10
+CLP_TAG = 1.16.11
+OSI_TAG = 0.107.9
+COINUTILS_TAG = 2.10.14
 SWIG_TAG = 3.0.12
 
 # Added in support of clean third party targets
@@ -125,6 +125,7 @@ endif
 .PHONY: build_third_party
 build_third_party: \
  Makefile.local \
+ archives_directory \
  install_deps_directories \
  install_zlib \
  install_gflags \
@@ -142,6 +143,12 @@ download_third_party: \
  dependencies/sources/Cbc-$(CBC_TAG)/configure
 
 # Directories
+.PHONY: archives_directory
+archives_directory: dependencies/archives
+
+dependencies/archives:
+	$(MKDIR_P) dependencies$Sarchives
+
 .PHONY: install_deps_directories
 install_deps_directories: \
  dependencies/install/bin \
@@ -206,7 +213,7 @@ dependencies/install/lib/zlib.lib: dependencies/sources/zlib-$(ZLIB_TAG)/zlib.h
 	$(COPY) dependencies$Ssources$Szlib-$(ZLIB_TAG)$Szlib.lib dependencies$Sinstall$Slib
 
 dependencies/sources/zlib-$(ZLIB_TAG)/zlib.h: dependencies/archives/zlib$(ZLIB_ARCHIVE_TAG).zip
-	$(UNZIP) -q -o -d dependencies$Ssources dependencies$Sarchives$Szlib$(ZLIB_ARCHIVE_TAG).zip
+	$(UNZIP) -q -d dependencies$Ssources dependencies$Sarchives$Szlib$(ZLIB_ARCHIVE_TAG).zip
 	-$(TOUCH) dependencies$Ssources$Szlib-$(ZLIB_TAG)$Szlib.h
 
 dependencies/archives/zlib$(ZLIB_ARCHIVE_TAG).zip:
@@ -236,7 +243,7 @@ dependencies/install/lib/gflags.lib: dependencies/sources/gflags-$(GFLAGS_TAG)
   "$(CMAKE)" --build build_cmake --target install
 
 dependencies/sources/gflags-$(GFLAGS_TAG): dependencies/archives/gflags-$(GFLAGS_TAG).zip | dependencies/sources
-	$(UNZIP) -q -o -d dependencies/sources dependencies\archives\gflags-$(GFLAGS_TAG).zip
+	$(UNZIP) -q -d dependencies/sources dependencies\archives\gflags-$(GFLAGS_TAG).zip
 	-$(TOUCH) dependencies\sources\gflags-$(GFLAGS_TAG)\INSTALL.md
 
 dependencies/archives/gflags-$(GFLAGS_TAG).zip:
@@ -270,7 +277,7 @@ dependencies/install/lib/glog.lib: dependencies/sources/glog-$(GLOG_TAG) install
   "$(CMAKE)" --build build_cmake --target install
 
 dependencies/sources/glog-$(GLOG_TAG): dependencies/archives/glog-$(GLOG_TAG).zip | dependencies/sources
-	$(UNZIP) -q -o -d dependencies/sources dependencies\archives\glog-$(GLOG_TAG).zip
+	$(UNZIP) -q -d dependencies/sources dependencies\archives\glog-$(GLOG_TAG).zip
 	-$(TOUCH) dependencies\sources\glog-$(GLOG_TAG)\CMakeLists.txt
 
 dependencies/archives/glog-$(GLOG_TAG).zip:
@@ -313,12 +320,9 @@ dependencies\sources\protobuf-$(PROTOBUF_TAG)\cmake\build\protobuf.sln: dependen
 	${SED} -i -e '/\"\/MD\"/d' dependencies\sources\protobuf-$(PROTOBUF_TAG)\cmake\CMakeLists.txt
 	cd dependencies\sources\protobuf-$(PROTOBUF_TAG)\cmake\build && "$(CMAKE)" -G $(CMAKE_PLATFORM) -Dprotobuf_BUILD_TESTS=OFF ..
 
-dependencies\sources\protobuf-$(PROTOBUF_TAG)\cmake\CMakeLists.txt: dependencies\archives\protobuf-$(PROTOBUF_TAG).zip
-	$(UNZIP) -q -o -d dependencies\sources dependencies\archives\protobuf-$(PROTOBUF_TAG).zip
-
-dependencies\archives\protobuf-$(PROTOBUF_TAG).zip: 
+dependencies\sources\protobuf-$(PROTOBUF_TAG)\cmake\CMakeLists.txt:
 	$(WGET) --quiet -P dependencies\archives --no-check-certificate https://github.com/google/protobuf/archive/v$(PROTOBUF_TAG).zip
-	cd dependencies/archives && rename v$(PROTOBUF_TAG).zip protobuf-$(PROTOBUF_TAG).zip
+	$(UNZIP) -q -d dependencies\sources dependencies\archives\v$(PROTOBUF_TAG).zip
 
 PROTOBUF_INC = /I"$(WINDOWS_PROTOBUF_PATH)\\include"
 PROTOBUF_SWIG = -I"$(WINDOWS_PROTOBUF_DIR)/include"
@@ -415,11 +419,9 @@ dependencies\sources\Cbc-$(CBC_TAG)\Cbc\MSVisualStudio\v10\$(CBC_PLATFORM)\cbc.e
 
 CBC_ARCHIVE:=https://www.coin-or.org/download/source/Cbc/Cbc-${CBC_TAG}.zip
 
-dependencies\sources\Cbc-$(CBC_TAG)\configure: dependencies\archives\Cbc-$(CBC_TAG).zip
-	$(UNZIP) -q -o -d dependencies\sources dependencies\archives\Cbc-$(CBC_TAG).zip
-
-dependencies\archives\Cbc-$(CBC_TAG).zip:
+dependencies\sources\Cbc-$(CBC_TAG)\configure:
 	$(WGET) --quiet --continue -P dependencies\archives --no-check-certificate ${CBC_ARCHIVE} || (@echo wget failed to dowload $(CBC_ARCHIVE), try running '$(WGET) -P dependencies\archives --no-check-certificate $(CBC_ARCHIVE)' then rerun 'make third_party' && exit 1)
+	$(UNZIP) -q -d dependencies\sources dependencies\archives\Cbc-$(CBC_TAG).zip
 
 # This is needed to find Coin include files and libraries.
 COINUTILS_INC = /I"$(WINDOWS_COINUTILS_PATH)\\include" /I"$(WINDOWS_COINUTILS_PATH)\\include\\coin"
@@ -489,7 +491,7 @@ DEPENDENCIES_LNK += $(COIN_LNK)
 install_swig: dependencies/install/swigwin-$(SWIG_TAG)/swig.exe
 
 dependencies/install/swigwin-$(SWIG_TAG)/swig.exe: dependencies/archives/swigwin-$(SWIG_TAG).zip
-	$(UNZIP) -q -o -d dependencies$Sinstall dependencies$Sarchives$Sswigwin-$(SWIG_TAG).zip
+	$(UNZIP) -q -d dependencies$Sinstall dependencies$Sarchives$Sswigwin-$(SWIG_TAG).zip
 	$(TOUCH) dependencies$Sinstall$Sswigwin-$(SWIG_TAG)$Sswig.exe
 
 SWIG_ARCHIVE:=https://superb-dca2.dl.sourceforge.net/project/swig/swigwin/swigwin-$(SWIG_TAG)/swigwin-$(SWIG_TAG).zip

@@ -15,7 +15,6 @@
 #define OR_TOOLS_SAT_SAT_DECISION_H_
 
 #include <vector>
-
 #include "ortools/base/integral_types.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/pb_constraint.h"

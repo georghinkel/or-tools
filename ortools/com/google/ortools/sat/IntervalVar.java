@@ -18,7 +18,7 @@ import com.google.ortools.sat.CpModelProto;
 import com.google.ortools.sat.IntervalConstraintProto;
 
 /** An interval variable. This class must be constructed from the CpModel class. */
-public final class IntervalVar {
+public class IntervalVar {
   IntervalVar(
       CpModelProto.Builder builder, int startIndex, int sizeIndex, int endIndex, String name) {
     this.modelBuilder = builder;

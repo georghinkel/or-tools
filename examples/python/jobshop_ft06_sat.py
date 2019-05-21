@@ -85,7 +85,6 @@ def jobshop_ft06():
 
     # Solve model.
     solver = cp_model.CpSolver()
-    solver.parameters.log_search_progress = True
     status = solver.Solve(model)
 
     # Output solution.

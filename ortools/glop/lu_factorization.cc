@@ -12,8 +12,6 @@
 // limitations under the License.
 
 #include "ortools/glop/lu_factorization.h"
-
-#include "ortools/lp_data/lp_types.h"
 #include "ortools/lp_data/lp_utils.h"
 
 namespace operations_research {
@@ -187,16 +185,15 @@ void LuFactorization::RightSolveLWithPermutedInput(const DenseColumn& a,
   }
 }
 
-void LuFactorization::RightSolveLForColumnView(
-    const CompactSparseMatrix::ColumnView& b, ScatteredColumn* x) const {
+void LuFactorization::RightSolveLForSparseColumn(const SparseColumn& b,
+                                                 ScatteredColumn* x) const {
   SCOPED_TIME_STAT(&stats_);
   DCHECK(IsAllZero(x->values));
   x->non_zeros.clear();
   if (is_identity_factorization_) {
-    const EntryIndex num_entries = b.num_entries();
-    for (EntryIndex i(0); i < num_entries; ++i) {
-      (*x)[b.EntryRow(i)] = b.EntryCoefficient(i);
-      x->non_zeros.push_back(b.EntryRow(i));
+    for (const SparseColumn::Entry e : b) {
+      (*x)[e.row()] = e.coefficient();
+      x->non_zeros.push_back(e.row());
     }
     return;
   }
@@ -208,10 +205,9 @@ void LuFactorization::RightSolveLForColumnView(
   // of b.
   ColIndex first_column_to_consider(RowToColIndex(x->values.size()));
   const ColIndex limit = lower_.GetFirstNonIdentityColumn();
-  const EntryIndex num_entries = b.num_entries();
-  for (EntryIndex i(0); i < num_entries; ++i) {
-    const RowIndex permuted_row = row_perm_[b.EntryRow(i)];
-    (*x)[permuted_row] = b.EntryCoefficient(i);
+  for (const SparseColumn::Entry e : b) {
+    const RowIndex permuted_row = row_perm_[e.row()];
+    (*x)[permuted_row] = e.coefficient();
     x->non_zeros.push_back(permuted_row);
 
     // The second condition only works because the elements on the diagonal of

@@ -21,18 +21,11 @@
 // std::function utilities.
 %include "ortools/util/python/functions.i"
 
-// import the domain class.
-%import "ortools/util/python/sorted_interval_list.i"
-
 %{
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/swig_helper.h"
 %}
-
-%pythoncode {
-import numbers
-}
 
 typedef int64_t int64;
 typedef uint64_t uint64;

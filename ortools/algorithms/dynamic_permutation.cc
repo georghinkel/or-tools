@@ -14,7 +14,6 @@
 #include "ortools/algorithms/dynamic_permutation.h"
 
 #include <algorithm>
-
 #include "ortools/algorithms/sparse_permutation.h"
 
 namespace operations_research {
