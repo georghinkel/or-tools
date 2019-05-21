@@ -21,9 +21,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-
 #include "absl/container/inlined_vector.h"
 #include "absl/types/span.h"
 #include "ortools/base/hash.h"
@@ -52,7 +52,7 @@ class SatClause {
   // treated separatly and never constructed. In practice, we do use
   // BinaryImplicationGraph for the clause of size 2, so this is mainly used for
   // size at least 3.
-  static SatClause* Create(const std::vector<Literal>& literals);
+  static SatClause* Create(absl::Span<const Literal> literals);
 
   // Non-sized delete because this is a tail-padded class.
   void operator delete(void* p) {
@@ -151,7 +151,7 @@ struct ClauseInfo {
 // information.
 class LiteralWatchers : public SatPropagator {
  public:
-  LiteralWatchers();
+  explicit LiteralWatchers(Model* model);
   ~LiteralWatchers() override;
 
   // Must be called before adding clauses refering to such variables.
@@ -168,7 +168,7 @@ class LiteralWatchers : public SatPropagator {
   SatClause* ReasonClause(int trail_index) const;
 
   // Adds a new clause and perform initial propagation for this clause only.
-  bool AddClause(const std::vector<Literal>& literals, Trail* trail);
+  bool AddClause(absl::Span<const Literal> literals, Trail* trail);
 
   // Same as AddClause() for a removable clause. This is only called on learned
   // conflict, so this should never have all its literal at false (CHECKED).
@@ -289,7 +289,7 @@ class LiteralWatchers : public SatPropagator {
   // Indicates if the corresponding watchers_on_false_ list need to be
   // cleaned. The boolean is_clean_ is just used in DCHECKs.
   SparseBitset<LiteralIndex> needs_cleaning_;
-  bool is_clean_;
+  bool is_clean_ = true;
 
   int64 num_inspected_clauses_;
   int64 num_inspected_clause_literals_;

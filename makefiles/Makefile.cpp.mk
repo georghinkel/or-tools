@@ -190,9 +190,6 @@ $(OR_TOOLS_LIBS): \
  $(CP_LIB_OBJS) \
  $(DEPENDENCIES_LNK) \
  $(LDFLAGS)
-ifdef WINDOWS_SCIP_DIR
-	$(COPY) $(WINDOWS_SCIP_DIR)$Sbin$Sscip.dll $(BIN_DIR)
-endif
 
 #####################
 ##  Flatzinc code  ##
@@ -385,6 +382,7 @@ test_cc_constraint_solver_samples: \
  rcc_vrp_resources \
  rcc_vrp_starts_ends \
  rcc_vrp_time_windows \
+ rcc_vrp_with_time_limit
 
 .PHONY: test_cc_sat_samples # Build and Run all C++ Sat Samples (located in ortools/sat/samples)
 test_cc_sat_samples: \
@@ -425,6 +423,7 @@ check_cc_pimpl: \
 
 .PHONY: test_cc_tests # Build and Run all C++ Tests (located in ortools/examples/tests)
 test_cc_tests: \
+ rcc_lp_test \
  rcc_boolean_test \
  rcc_bug_fz1 \
  rcc_cpp11_test \
@@ -555,9 +554,6 @@ clean_cc:
 	-$(DEL) $(BIN_DIR)$S*.lib
 	-$(DELREC) $(GEN_PATH)$Sflatzinc$S*
 	-$(DELREC) $(OBJ_DIR)$Sflatzinc$S*
-ifdef WINDOWS_SCIP_DIR
-	-$(DEL) $(BIN_DIR)$Sscip.dll
-endif
 
 .PHONY: clean_compat
 clean_compat:
@@ -626,17 +622,17 @@ install_libortools: $(OR_TOOLS_LIBS) install_ortools_dirs
 install_third_party: install_dirs
 ifeq ($(UNIX_GFLAGS_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) dependencies$Sinstall$Sinclude$Sgflags "$(DESTDIR)$(prefix)$Sinclude"
-	$(COPYREC) dependencies$Sinstall$Slib$Slibgflags* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$Slibgflags* "$(DESTDIR)$(prefix)$Slib"
 	$(COPYREC) dependencies$Sinstall$Sbin$Sgflags_completions.sh "$(DESTDIR)$(prefix)$Sbin"
 endif
 ifeq ($(UNIX_GLOG_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) dependencies$Sinstall$Sinclude$Sglog "$(DESTDIR)$(prefix)$Sinclude"
-	$(COPYREC) dependencies$Sinstall$Slib$Slibglog* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$Slibglog* "$(DESTDIR)$(prefix)$Slib"
 endif
 ifeq ($(UNIX_PROTOBUF_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) dependencies$Sinstall$Sinclude$Sgoogle "$(DESTDIR)$(prefix)$Sinclude"
 	$(COPYREC) $(subst /,$S,$(_PROTOBUF_LIB_DIR))$Slibproto* "$(DESTDIR)$(prefix)$Slib"
-	$(COPYREC) dependencies$Sinstall$Sbin$Sprotoc "$(DESTDIR)$(prefix)$Sbin"
+	$(COPY) dependencies$Sinstall$Sbin$Sprotoc* "$(DESTDIR)$(prefix)$Sbin"
 endif
 ifeq ($(UNIX_ABSL_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) dependencies$Sinstall$Sinclude$Sabsl "$(DESTDIR)$(prefix)$Sinclude"
@@ -645,11 +641,11 @@ ifeq ($(UNIX_ABSL_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 endif
 ifeq ($(UNIX_CBC_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) dependencies$Sinstall$Sinclude$Scoin "$(DESTDIR)$(prefix)$Sinclude"
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCbc* "$(DESTDIR)$(prefix)$Slib"
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCgl* "$(DESTDIR)$(prefix)$Slib"
-	$(COPYREC) dependencies$Sinstall$Slib$SlibClp* "$(DESTDIR)$(prefix)$Slib"
-	$(COPYREC) dependencies$Sinstall$Slib$SlibOsi* "$(DESTDIR)$(prefix)$Slib"
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCoinUtils* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCbc* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCgl* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibClp* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibOsi* "$(DESTDIR)$(prefix)$Slib"
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCoinUtils* "$(DESTDIR)$(prefix)$Slib"
 	$(COPYREC) dependencies$Sinstall$Sbin$Scbc "$(DESTDIR)$(prefix)$Sbin"
 	$(COPYREC) dependencies$Sinstall$Sbin$Sclp "$(DESTDIR)$(prefix)$Sbin"
 endif

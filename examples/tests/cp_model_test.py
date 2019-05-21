@@ -37,6 +37,18 @@ class CpModelTest(object):
         if not a:
             print('Error:', msg)
 
+    def testDomainFromValues(self):
+        print('testDomainFromValues')
+        model = cp_model.CpModel()
+        d = cp_model.Domain.FromValues([0, 1, 2, -2, 5, 4])
+        self.assertEqual(d.FlattenedIntervals(), [-2, -2, 0, 2, 4, 5])
+
+    def testDomainFromIntervals(self):
+        print('testDomainFromIntervals')
+        model = cp_model.CpModel()
+        d = cp_model.Domain.FromIntervals([(0, 3), (5, 5), (-1, 1)])
+        self.assertEqual(d.FlattenedIntervals(), [-1, 3, 5, 5])
+
     def testCreateIntegerVariable(self):
         print('testCreateIntegerVariable')
         model = cp_model.CpModel()
@@ -59,7 +71,7 @@ class CpModelTest(object):
         model = cp_model.CpModel()
         x = model.NewIntVar(-10, 10, 'x')
         y = model.NewIntVar(-10, 10, 'y')
-        model.AddLinearConstraint([(x, 1), (y, 2)], 0, 10)
+        model.AddLinearConstraint(x + 2 * y, 0, 10)
         model.Minimize(y)
         solver = cp_model.CpSolver()
         self.assertEqual(cp_model_pb2.OPTIMAL, solver.Solve(model))
@@ -258,7 +270,7 @@ class CpModelTest(object):
         x = model.NewIntVar(-10, 10, 'x')
         y = model.NewIntVar(-10, 10, 'y')
         b = model.NewBoolVar('b')
-        model.AddLinearConstraint([(x, 1), (y, 2)], 0, 10).OnlyEnforceIf(
+        model.AddLinearConstraint(x + 2 * y, 0, 10).OnlyEnforceIf(
             b.Not())
         model.Minimize(y)
         self.assertEqual(1, len(model.Proto().constraints))
@@ -555,12 +567,29 @@ class CpModelTest(object):
         solver = cp_model.CpSolver()
         solution_counter = SolutionCounter()
         status = solver.SearchForAllSolutions(model, solution_counter)
-        self.assertEqual(status, cp_model.FEASIBLE)
+        self.assertEqual(status, cp_model.OPTIMAL)
         self.assertEqual(4, solution_counter.solution_count())
+
+
+    def testSequentialSolve(self):
+        print('testSequentialSolve')
+        model = cp_model.CpModel()
+        t = model.NewBoolVar('t')
+        a = model.NewBoolVar('a')
+        b = model.NewBoolVar('b')
+        model.AddBoolAnd([a, b]).OnlyEnforceIf(t)
+        model.Add(t == 1).OnlyEnforceIf([a, b])
+
+        solver = cp_model.CpSolver()
+        status1 = solver.Solve(model)
+        status2 = solver.Solve(model)
+        self.assertEqual(status1, status2)
 
 
 if __name__ == '__main__':
     cp_model_test = CpModelTest()
+    cp_model_test.testDomainFromValues()
+    cp_model_test.testDomainFromIntervals()
     cp_model_test.testCreateIntegerVariable()
     cp_model_test.testNegation()
     cp_model_test.testLinear()
@@ -604,3 +633,4 @@ if __name__ == '__main__':
     cp_model_test.testDisplayBounds()
     cp_model_test.testIntegerExpressionErrors()
     cp_model_test.testLinearizedBoolAndEqual()
+    cp_model_test.testSequentialSolve()

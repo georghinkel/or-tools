@@ -19,6 +19,7 @@
 #include "ortools/sat/integer.h"
 #include "ortools/sat/linear_programming_constraint.h"
 #include "ortools/sat/pseudo_costs.h"
+#include "ortools/sat/rins.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_decision.h"
 #include "ortools/sat/util.h"
@@ -26,17 +27,16 @@
 namespace operations_research {
 namespace sat {
 
-LiteralIndex AtMinValue(IntegerVariable var, Model* model) {
-  IntegerEncoder* const integer_encoder = model->GetOrCreate<IntegerEncoder>();
-  IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
-
+LiteralIndex AtMinValue(IntegerVariable var, IntegerTrail* integer_trail,
+                        IntegerEncoder* integer_encoder) {
   DCHECK(!integer_trail->IsCurrentlyIgnored(var));
   const IntegerValue lb = integer_trail->LowerBound(var);
   DCHECK_LE(lb, integer_trail->UpperBound(var));
   if (lb == integer_trail->UpperBound(var)) return kNoLiteralIndex;
-  return integer_encoder
-      ->GetOrCreateAssociatedLiteral(IntegerLiteral::LowerOrEqual(var, lb))
-      .Index();
+
+  const Literal result = integer_encoder->GetOrCreateAssociatedLiteral(
+      IntegerLiteral::LowerOrEqual(var, lb));
+  return result.Index();
 }
 
 LiteralIndex GreaterOrEqualToMiddleValue(IntegerVariable var, Model* model) {
@@ -131,12 +131,14 @@ LiteralIndex SplitDomainUsingBestSolutionValue(IntegerVariable var,
 // which seems expensive. Improve.
 std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
     const std::vector<IntegerVariable>& vars, Model* model) {
-  return [/*copy*/ vars, model]() {
-    IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
+  auto* integer_trail = model->GetOrCreate<IntegerTrail>();
+  auto* integer_encoder = model->GetOrCreate<IntegerEncoder>();
+  return [/*copy*/ vars, integer_trail, integer_encoder]() {
     for (const IntegerVariable var : vars) {
       // Note that there is no point trying to fix a currently ignored variable.
       if (integer_trail->IsCurrentlyIgnored(var)) continue;
-      const LiteralIndex decision = AtMinValue(var, model);
+      const LiteralIndex decision =
+          AtMinValue(var, integer_trail, integer_encoder);
       if (decision != kNoLiteralIndex) return decision;
     }
     return kNoLiteralIndex;
@@ -145,8 +147,9 @@ std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
 
 std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
     const std::vector<IntegerVariable>& vars, Model* model) {
-  return [/*copy */ vars, model]() {
-    IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
+  auto* integer_trail = model->GetOrCreate<IntegerTrail>();
+  auto* integer_encoder = model->GetOrCreate<IntegerEncoder>();
+  return [/*copy */ vars, integer_trail, integer_encoder]() {
     IntegerVariable candidate = kNoIntegerVariable;
     IntegerValue candidate_lb;
     for (const IntegerVariable var : vars) {
@@ -159,7 +162,7 @@ std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
       }
     }
     if (candidate == kNoIntegerVariable) return kNoLiteralIndex;
-    return AtMinValue(candidate, model);
+    return AtMinValue(candidate, integer_trail, integer_encoder);
   };
 }
 
@@ -245,24 +248,23 @@ std::function<LiteralIndex()> SatSolverHeuristic(Model* model) {
   SatDecisionPolicy* decision_policy = model->GetOrCreate<SatDecisionPolicy>();
   return [sat_solver, trail, decision_policy] {
     const bool all_assigned = trail->Index() == sat_solver->NumVariables();
-    return all_assigned ? kNoLiteralIndex
-                        : decision_policy->NextBranch().Index();
+    if (all_assigned) return kNoLiteralIndex;
+    const Literal result = decision_policy->NextBranch();
+    CHECK(!sat_solver->Assignment().LiteralIsAssigned(result));
+    return result.Index();
   };
 }
 
 std::function<LiteralIndex()> PseudoCost(Model* model) {
-  const ObjectiveSynchronizationHelper* helper =
-      model->Get<ObjectiveSynchronizationHelper>();
+  auto* objective = model->Get<ObjectiveDefinition>();
   const bool has_objective =
-      helper != nullptr && helper->objective_var != kNoIntegerVariable;
-
+      objective != nullptr && objective->objective_var != kNoIntegerVariable;
   if (!has_objective) {
     return []() { return kNoLiteralIndex; };
   }
 
   PseudoCosts* pseudo_costs = model->GetOrCreate<PseudoCosts>();
-
-  return [=]() {
+  return [pseudo_costs, model]() {
     const IntegerVariable chosen_var = pseudo_costs->GetBestDecisionVar();
 
     if (chosen_var == kNoIntegerVariable) return kNoLiteralIndex;
@@ -311,8 +313,12 @@ std::function<LiteralIndex()> RandomizeOnRestartHeuristic(Model* model) {
   value_selection_weight.push_back(1);
 
   // Min value.
+  auto* integer_trail = model->GetOrCreate<IntegerTrail>();
+  auto* integer_encoder = model->GetOrCreate<IntegerEncoder>();
   value_selection_heuristics.push_back(
-      [model](IntegerVariable var) { return AtMinValue(var, model); });
+      [integer_trail, integer_encoder](IntegerVariable var) {
+        return AtMinValue(var, integer_trail, integer_encoder);
+      });
   value_selection_weight.push_back(1);
 
   // Special case: Don't change the decision value.
@@ -324,8 +330,6 @@ std::function<LiteralIndex()> RandomizeOnRestartHeuristic(Model* model) {
                                            value_selection_weight.end());
 
   int policy_index = 0;
-  auto* encoder = model->GetOrCreate<IntegerEncoder>();
-  auto* integer_trail = model->GetOrCreate<IntegerTrail>();
   int val_policy_index = 0;
   return [=]() mutable {
     if (sat_solver->CurrentDecisionLevel() == 0) {
@@ -351,7 +355,7 @@ std::function<LiteralIndex()> RandomizeOnRestartHeuristic(Model* model) {
 
     // Decode the decision and get the variable.
     for (const IntegerLiteral l :
-         encoder->GetAllIntegerLiterals(Literal(current_decision))) {
+         integer_encoder->GetAllIntegerLiterals(Literal(current_decision))) {
       if (integer_trail->IsCurrentlyIgnored(l.var)) continue;
 
       // Try the selected policy.
@@ -484,62 +488,60 @@ std::function<bool()> SatSolverRestartPolicy(Model* model) {
   return [policy]() { return policy->ShouldRestart(); };
 }
 
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(
-    const std::vector<Literal>& assumptions,
-    const std::function<LiteralIndex()>& next_decision, Model* model) {
-  if (model->GetOrCreate<TimeLimit>()->LimitReached()) {
-    return SatSolver::LIMIT_REACHED;
-  }
-  SatSolver* const solver = model->GetOrCreate<SatSolver>();
-  if (!solver->ResetWithGivenAssumptions(assumptions)) {
-    return solver->UnsatStatus();
-  }
+void ConfigureSearchHeuristics(
+    const std::function<LiteralIndex()>& fixed_search, Model* model) {
+  SearchHeuristics& heuristics = *model->GetOrCreate<SearchHeuristics>();
+  heuristics.policy_index = 0;
+  heuristics.decision_policies.clear();
+  heuristics.restart_policies.clear();
+
   const SatParameters& parameters = *(model->GetOrCreate<SatParameters>());
   switch (parameters.search_branching()) {
     case SatParameters::AUTOMATIC_SEARCH: {
-      std::function<LiteralIndex()> search;
+      std::function<LiteralIndex()> decision_policy;
       if (parameters.randomize_search()) {
-        search = SequentialSearch(
-            {RandomizeOnRestartHeuristic(model), next_decision});
+        decision_policy = RandomizeOnRestartHeuristic(model);
       } else {
-        search = SequentialSearch({SatSolverHeuristic(model), next_decision});
+        decision_policy = SatSolverHeuristic(model);
       }
+      decision_policy = SequentialSearch({decision_policy, fixed_search});
       if (parameters.exploit_integer_lp_solution() ||
           parameters.exploit_all_lp_solution()) {
-        search = ExploitLpSolution(search, model);
+        decision_policy = ExploitLpSolution(decision_policy, model);
       }
-      return SolveProblemWithPortfolioSearch(
-          {search}, {SatSolverRestartPolicy(model)}, model);
+      heuristics.decision_policies = {decision_policy};
+      heuristics.restart_policies = {SatSolverRestartPolicy(model)};
+      return;
     }
     case SatParameters::FIXED_SEARCH: {
-      // Not all Boolean might appear in next_decision(), so once there is no
+      // Not all Boolean might appear in fixed_search(), so once there is no
       // decision left, we fix all Booleans that are still undecided.
+      heuristics.decision_policies = {
+          SequentialSearch({fixed_search, SatSolverHeuristic(model)})};
+
       if (parameters.randomize_search()) {
-        return SolveProblemWithPortfolioSearch(
-            {SequentialSearch({next_decision, SatSolverHeuristic(model)})},
-            {SatSolverRestartPolicy(model)}, model);
-      } else {
-        auto no_restart = []() { return false; };
-        return SolveProblemWithPortfolioSearch(
-            {SequentialSearch({next_decision, SatSolverHeuristic(model)})},
-            {no_restart}, model);
+        heuristics.restart_policies = {SatSolverRestartPolicy(model)};
+        return;
       }
+
+      // TODO(user): We might want to restart if external info is available.
+      // Code a custom restart for this?
+      auto no_restart = []() { return false; };
+      heuristics.restart_policies = {no_restart};
+      return;
     }
     case SatParameters::PORTFOLIO_SEARCH: {
-      auto incomplete_portfolio = AddModelHeuristics({next_decision}, model);
-      auto portfolio = CompleteHeuristics(
-          incomplete_portfolio,
-          SequentialSearch({SatSolverHeuristic(model), next_decision}));
+      heuristics.decision_policies = CompleteHeuristics(
+          AddModelHeuristics({fixed_search}, model),
+          SequentialSearch({SatSolverHeuristic(model), fixed_search}));
       if (parameters.exploit_integer_lp_solution()) {
-        for (auto& ref : portfolio) {
+        for (auto& ref : heuristics.decision_policies) {
           ref = ExploitLpSolution(ref, model);
         }
       }
-      auto default_restart_policy = SatSolverRestartPolicy(model);
-      auto restart_policies = std::vector<std::function<bool()>>(
-          portfolio.size(), default_restart_policy);
-      return SolveProblemWithPortfolioSearch(portfolio, restart_policies,
-                                             model);
+      heuristics.restart_policies.assign(heuristics.decision_policies.size(),
+                                         SatSolverRestartPolicy(model));
+      return;
     }
     case SatParameters::LP_SEARCH: {
       // Fill portfolio with pseudocost heuristics.
@@ -548,36 +550,36 @@ SatSolver::Status SolveIntegerProblemWithLazyEncoding(
            *(model->GetOrCreate<LinearProgrammingConstraintCollection>())) {
         lp_heuristics.push_back(ct->LPReducedCostAverageBranching());
       }
-      if (lp_heuristics.empty()) {  // Revert to automatic search.
-        return SolveProblemWithPortfolioSearch(
-            {SequentialSearch({next_decision, SatSolverHeuristic(model)})},
-            {SatSolverRestartPolicy(model)}, model);
+      if (lp_heuristics.empty()) {  // Revert to fixed search.
+        heuristics.decision_policies = {SequentialSearch(
+            {fixed_search, SatSolverHeuristic(model)})},
+        heuristics.restart_policies = {SatSolverRestartPolicy(model)};
+        return;
       }
-      auto portfolio = CompleteHeuristics(
+      heuristics.decision_policies = CompleteHeuristics(
           lp_heuristics,
-          SequentialSearch({SatSolverHeuristic(model), next_decision}));
-      auto default_restart_policy = SatSolverRestartPolicy(model);
-      auto restart_policies = std::vector<std::function<bool()>>(
-          portfolio.size(), default_restart_policy);
-      return SolveProblemWithPortfolioSearch(portfolio, restart_policies,
-                                             model);
+          SequentialSearch({SatSolverHeuristic(model), fixed_search}));
+      heuristics.restart_policies.assign(heuristics.decision_policies.size(),
+                                         SatSolverRestartPolicy(model));
+      return;
     }
     case SatParameters::PSEUDO_COST_SEARCH: {
       std::function<LiteralIndex()> search = SequentialSearch(
-          {PseudoCost(model), SatSolverHeuristic(model), next_decision});
-      search = IntegerValueSelectionHeuristic(search, model);
-      return SolveProblemWithPortfolioSearch(
-          {search}, {SatSolverRestartPolicy(model)}, model);
+          {PseudoCost(model), SatSolverHeuristic(model), fixed_search});
+      heuristics.decision_policies = {
+          IntegerValueSelectionHeuristic(search, model)};
+      heuristics.restart_policies = {SatSolverRestartPolicy(model)};
+      return;
     }
     case SatParameters::PORTFOLIO_WITH_QUICK_RESTART_SEARCH: {
       std::function<LiteralIndex()> search =
-          SequentialSearch({RandomizeOnRestartHeuristic(model), next_decision});
-      return SolveProblemWithPortfolioSearch(
-          {search},
-          {RestartEveryKFailures(10, model->GetOrCreate<SatSolver>())}, model);
+          SequentialSearch({RandomizeOnRestartHeuristic(model), fixed_search});
+      heuristics.decision_policies = {search};
+      heuristics.restart_policies = {
+          RestartEveryKFailures(10, model->GetOrCreate<SatSolver>())};
+      return;
     }
   }
-  return SatSolver::LIMIT_REACHED;
 }
 
 std::vector<std::function<LiteralIndex()>> AddModelHeuristics(
@@ -612,25 +614,26 @@ void SolutionDetails::LoadFromTrail(const IntegerTrail& integer_trail) {
   solution_count++;
 }
 
-SatSolver::Status SolveProblemWithPortfolioSearch(
-    std::vector<std::function<LiteralIndex()>> decision_policies,
-    std::vector<std::function<bool()>> restart_policies, Model* model) {
-  const int num_policies = decision_policies.size();
-  if (num_policies == 0) return SatSolver::FEASIBLE;
-  CHECK_EQ(num_policies, restart_policies.size());
-  SatSolver* const solver = model->GetOrCreate<SatSolver>();
-  const ObjectiveSynchronizationHelper* helper =
-      model->Get<ObjectiveSynchronizationHelper>();
-  const bool synchronize_objective =
-      solver->AssumptionLevel() == 0 && helper != nullptr &&
-      helper->get_external_best_objective != nullptr &&
-      helper->objective_var != kNoIntegerVariable &&
-      model->GetOrCreate<SatParameters>()->share_objective_bounds() &&
-      model->GetOrCreate<ObjectiveSynchronizationHelper>()->parallel_mode;
+SatSolver::Status SolveIntegerProblem(Model* model) {
+  TimeLimit* time_limit = model->GetOrCreate<TimeLimit>();
+  if (time_limit->LimitReached()) return SatSolver::LIMIT_REACHED;
+
+  SearchHeuristics& heuristics = *model->GetOrCreate<SearchHeuristics>();
+  const int num_policies = heuristics.decision_policies.size();
+  CHECK_NE(num_policies, 0);
+  CHECK_EQ(num_policies, heuristics.restart_policies.size());
+
+  // This is needed for recording the pseudo-costs.
+  IntegerVariable objective_var = kNoIntegerVariable;
+  {
+    const ObjectiveDefinition* objective = model->Get<ObjectiveDefinition>();
+    if (objective != nullptr) objective_var = objective->objective_var;
+  }
 
   // Note that it is important to do the level-zero propagation if it wasn't
   // already done because EnqueueDecisionAndBackjumpOnConflict() assumes that
   // the solver is in a "propagated" state.
+  SatSolver* const solver = model->GetOrCreate<SatSolver>();
   if (!solver->FinishPropagation()) return solver->UnsatStatus();
 
   // Create and initialize pseudo costs.
@@ -641,48 +644,18 @@ SatSolver::Status SolveProblemWithPortfolioSearch(
   IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
 
   // Main search loop.
-  int policy_index = 0;
-  TimeLimit* time_limit = model->GetOrCreate<TimeLimit>();
   const int64 old_num_conflicts = solver->num_failures();
   const int64 conflict_limit =
       model->GetOrCreate<SatParameters>()->max_number_of_conflicts();
+  int64 num_decisions_without_rins = 0;
   while (!time_limit->LimitReached() &&
          (solver->num_failures() - old_num_conflicts < conflict_limit)) {
     // If needed, restart and switch decision_policy.
-    if (restart_policies[policy_index]()) {
+    if (heuristics.restart_policies[heuristics.policy_index]()) {
       if (!solver->RestoreSolverToAssumptionLevel()) {
         return solver->UnsatStatus();
       }
-      policy_index = (policy_index + 1) % num_policies;
-    }
-
-    // Check external objective, and restart if a better one is supplied.
-    // This code has to be run before the level_zero_propagate_callbacks are
-    // triggered, as one of them will actually import the new objective bounds.
-    // TODO(user): Maybe do not check this at each decision.
-    // TODO(user): Move restart code to the restart part?
-    if (synchronize_objective) {
-      const double external_bound = helper->get_external_best_objective();
-      CHECK(helper->get_external_best_bound != nullptr);
-      const double external_best_bound = helper->get_external_best_bound();
-      IntegerValue current_objective_upper_bound(
-          integer_trail->UpperBound(helper->objective_var));
-      IntegerValue current_objective_lower_bound(
-          integer_trail->LowerBound(helper->objective_var));
-      IntegerValue new_objective_upper_bound(
-          std::isfinite(external_bound)
-              ? helper->UnscaledObjective(external_bound) - 1
-              : current_objective_upper_bound.value());
-      IntegerValue new_objective_lower_bound(
-          std::isfinite(external_best_bound)
-              ? helper->UnscaledObjective(external_best_bound)
-              : current_objective_lower_bound.value());
-      if (new_objective_upper_bound < current_objective_upper_bound ||
-          new_objective_lower_bound > current_objective_lower_bound) {
-        if (!solver->RestoreSolverToAssumptionLevel()) {
-          return solver->UnsatStatus();
-        }
-      }
+      heuristics.policy_index = (heuristics.policy_index + 1) % num_policies;
     }
 
     if (solver->CurrentDecisionLevel() == 0) {
@@ -696,16 +669,17 @@ SatSolver::Status SolveProblemWithPortfolioSearch(
     }
 
     // Get next decision, try to enqueue.
-    const LiteralIndex decision = decision_policies[policy_index]();
+    const LiteralIndex decision =
+        heuristics.decision_policies[heuristics.policy_index]();
 
     // Record the changelist and objective bounds for updating pseudo costs.
     const std::vector<PseudoCosts::VariableBoundChange> bound_changes =
         GetBoundChanges(decision, model);
     IntegerValue current_obj_lb = kMinIntegerValue;
     IntegerValue current_obj_ub = kMaxIntegerValue;
-    if (helper != nullptr && helper->objective_var != kNoIntegerVariable) {
-      current_obj_lb = integer_trail->LowerBound(helper->objective_var);
-      current_obj_ub = integer_trail->UpperBound(helper->objective_var);
+    if (objective_var != kNoIntegerVariable) {
+      current_obj_lb = integer_trail->LowerBound(objective_var);
+      current_obj_ub = integer_trail->UpperBound(objective_var);
     }
     const int old_level = solver->CurrentDecisionLevel();
 
@@ -722,12 +696,10 @@ SatSolver::Status SolveProblemWithPortfolioSearch(
     solver->EnqueueDecisionAndBackjumpOnConflict(Literal(decision));
 
     // Update the pseudo costs.
-    if (solver->CurrentDecisionLevel() > old_level && helper != nullptr &&
-        helper->objective_var != kNoIntegerVariable) {
-      const IntegerValue new_obj_lb =
-          integer_trail->LowerBound(helper->objective_var);
-      const IntegerValue new_obj_ub =
-          integer_trail->UpperBound(helper->objective_var);
+    if (solver->CurrentDecisionLevel() > old_level &&
+        objective_var != kNoIntegerVariable) {
+      const IntegerValue new_obj_lb = integer_trail->LowerBound(objective_var);
+      const IntegerValue new_obj_ub = integer_trail->UpperBound(objective_var);
       const IntegerValue objective_bound_change =
           (new_obj_lb - current_obj_lb) + (current_obj_ub - new_obj_ub);
       pseudo_costs->UpdateCost(bound_changes, objective_bound_change);
@@ -735,12 +707,30 @@ SatSolver::Status SolveProblemWithPortfolioSearch(
 
     solver->AdvanceDeterministicTime(time_limit);
     if (!solver->ReapplyAssumptionsIfNeeded()) return solver->UnsatStatus();
+    if (model->GetOrCreate<SolutionDetails>()->solution_count > 0 &&
+        model->Get<SharedRINSNeighborhoodManager>() != nullptr) {
+      num_decisions_without_rins++;
+      // TODO(user): Experiment more around dynamically changing the
+      // threshold for trigerring RINS. Alternatively expose this as parameter
+      // so this can be tuned later.
+      if (num_decisions_without_rins >= 100) {
+        num_decisions_without_rins = 0;
+        AddRINSNeighborhood(model);
+      }
+    }
   }
   return SatSolver::Status::LIMIT_REACHED;
 }
 
-// Shortcut when there is no assumption, and we consider all variables in
-// order for the search decision.
+SatSolver::Status ResetAndSolveIntegerProblem(
+    const std::vector<Literal>& assumptions, Model* model) {
+  SatSolver* const solver = model->GetOrCreate<SatSolver>();
+  if (!solver->ResetWithGivenAssumptions(assumptions)) {
+    return solver->UnsatStatus();
+  }
+  return SolveIntegerProblem(model);
+}
+
 SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model) {
   const IntegerVariable num_vars =
       model->GetOrCreate<IntegerTrail>()->NumIntegerVariables();
@@ -748,11 +738,16 @@ SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model) {
   for (IntegerVariable var(0); var < num_vars; ++var) {
     all_variables.push_back(var);
   }
-  return SolveIntegerProblemWithLazyEncoding(
-      {}, FirstUnassignedVarAtItsMinHeuristic(all_variables, model), model);
+
+  SearchHeuristics& heuristics = *model->GetOrCreate<SearchHeuristics>();
+  heuristics.policy_index = 0;
+  heuristics.decision_policies = {SequentialSearch(
+      {SatSolverHeuristic(model),
+       FirstUnassignedVarAtItsMinHeuristic(all_variables, model)})};
+  heuristics.restart_policies = {SatSolverRestartPolicy(model)};
+  return ResetAndSolveIntegerProblem(/*assumptions=*/{}, model);
 }
 
-// Logging helper.
 void LogNewSolution(const std::string& event_or_solution_count,
                     double time_in_seconds, double obj_lb, double obj_ub,
                     const std::string& solution_info) {

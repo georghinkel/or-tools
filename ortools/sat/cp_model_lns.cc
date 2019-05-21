@@ -14,19 +14,26 @@
 #include "ortools/sat/cp_model_lns.h"
 
 #include <numeric>
+#include <vector>
 
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_loader.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/linear_programming_constraint.h"
+#include "ortools/sat/rins.h"
 #include "ortools/util/random_engine.h"
 
 namespace operations_research {
 namespace sat {
 
 NeighborhoodGeneratorHelper::NeighborhoodGeneratorHelper(
-    CpModelProto const* model, bool focus_on_decision_variables)
-    : model_proto_(*model) {
+    CpModelProto const* model_proto, bool focus_on_decision_variables)
+    : model_proto_(*model_proto) {
+  UpdateHelperData(focus_on_decision_variables);
+}
+
+void NeighborhoodGeneratorHelper::UpdateHelperData(
+    bool focus_on_decision_variables) {
   var_to_constraint_.resize(model_proto_.variables_size());
   constraint_to_var_.resize(model_proto_.constraints_size());
   for (int ct_index = 0; ct_index < model_proto_.constraints_size();
@@ -114,8 +121,9 @@ Neighborhood NeighborhoodGeneratorHelper::FixGivenVariables(
   }
 
   // TODO(user): force better objective? Note that this is already done when the
-  // hint above is sucessfully loaded (i.e. if it passes the presolve correctly)
-  // since the solver will try to find better solution than the current one.
+  // hint above is successfully loaded (i.e. if it passes the presolve
+  // correctly) since the solver will try to find better solution than the
+  // current one.
   return neighborhood;
 }
 
@@ -131,6 +139,35 @@ Neighborhood NeighborhoodGeneratorHelper::RelaxGivenVariables(
     }
   }
   return FixGivenVariables(initial_solution, fixed_variables);
+}
+
+Neighborhood NeighborhoodGeneratorHelper::FixAllVariables(
+    const CpSolverResponse& initial_solution) const {
+  std::vector<int> fixed_variables;
+  for (const int i : active_variables_) {
+    fixed_variables.push_back(i);
+  }
+  return FixGivenVariables(initial_solution, fixed_variables);
+}
+
+double NeighborhoodGenerator::GetUCBScore(int64 total_num_calls) const {
+  DCHECK_GE(total_num_calls, num_calls_);
+  if (num_calls_ <= 10) return std::numeric_limits<double>::infinity();
+  return current_average_ + sqrt((2 * log(total_num_calls)) / num_calls_);
+}
+
+void NeighborhoodGenerator::AddSolveData(double objective_diff,
+                                         double deterministic_time) {
+  double gain_per_time_unit = objective_diff / (1.0 + deterministic_time);
+  // TODO(user): Add more data.
+  // TODO(user): Weight more recent data.
+  num_calls_++;
+  // degrade the current average to forget old learnings.
+  if (num_calls_ <= 100) {
+    current_average_ += (gain_per_time_unit - current_average_) / num_calls_;
+  } else {
+    current_average_ = 0.9 * current_average_ + 0.1 * gain_per_time_unit;
+  }
 }
 
 namespace {
@@ -417,43 +454,37 @@ Neighborhood RelaxationInducedNeighborhoodGenerator::Generate(
   Neighborhood neighborhood;
   neighborhood.cp_model = helper_.ModelProto();
 
-  const int num_active_vars = helper_.ActiveVariables().size();
   const int num_model_vars = helper_.ModelProto().variables_size();
-  const int target_size =
-      num_model_vars - std::ceil(difficulty * num_active_vars);
-  if (target_size == num_active_vars) {
-    neighborhood.is_reduced = false;
-    return neighborhood;
-  }
-
-  auto* mapping = model_.Get<CpModelMapping>();
-  auto* lp_dispatcher = model_.Get<LinearProgrammingDispatcher>();
-
-  if (lp_dispatcher == nullptr) {
-    neighborhood.is_reduced = false;
-    return neighborhood;
-  }
-
-  std::vector<int> fixed_variables;
+  SharedRINSNeighborhoodManager* rins_manager =
+      model_->Mutable<SharedRINSNeighborhoodManager>();
+  std::vector<int> all_vars;
   for (int i = 0; i < num_model_vars; ++i) {
-    if (!helper_.IsActive(i)) continue;
-    if (mapping->IsInteger(i)) {
-      const IntegerVariable var = mapping->Integer(i);
-      const IntegerVariable positive_var = PositiveVariable(var);
-      LinearProgrammingConstraint* lp =
-          gtl::FindWithDefault(*lp_dispatcher, positive_var, nullptr);
-      if (lp == nullptr) continue;
-      const double lp_value = (lp->GetSolutionValue(positive_var));
+    all_vars.push_back(i);
+  }
+  if (rins_manager == nullptr) {
+    // TODO(user): Support skipping this neighborhood instead of going
+    // through solving process for the trivial model.
+    return helper_.FixAllVariables(initial_solution);
+  }
+  absl::optional<RINSNeighborhood> rins_neighborhood_opt =
+      rins_manager->GetUnexploredNeighborhood();
 
-      if (std::abs(lp_value - initial_solution.solution(i)) < 1e-4) {
-        // Fix this var.
-        fixed_variables.push_back(i);
-        if (fixed_variables.size() >= target_size) break;
-      }
-    }
+  if (!rins_neighborhood_opt.has_value()) {
+    return helper_.FixAllVariables(initial_solution);
   }
 
-  return helper_.FixGivenVariables(initial_solution, fixed_variables);
+  // Fix the variables in the local model.
+  for (const std::pair<RINSVariable, int64> fixed_var :
+       rins_neighborhood_opt.value().fixed_vars) {
+    int var = fixed_var.first.model_var;
+    int64 value = fixed_var.second;
+    if (!helper_.IsActive(var)) continue;
+    neighborhood.cp_model.mutable_variables(var)->clear_domain();
+    neighborhood.cp_model.mutable_variables(var)->add_domain(value);
+    neighborhood.cp_model.mutable_variables(var)->add_domain(value);
+    neighborhood.is_reduced = true;
+  }
+  return neighborhood;
 }
 
 }  // namespace sat

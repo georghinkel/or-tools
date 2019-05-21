@@ -19,6 +19,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/int128.h"
 #include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
@@ -27,6 +28,7 @@
 #include "ortools/glop/preprocessor.h"
 #include "ortools/glop/status.h"
 #include "ortools/graph/strongly_connected_components.h"
+#include "ortools/lp_data/lp_types.h"
 #include "ortools/util/saturated_arithmetic.h"
 
 namespace operations_research {
@@ -42,7 +44,8 @@ const double LinearProgrammingConstraint::kLpEpsilon = 1e-6;
 // TODO(user): make SatParameters singleton too, otherwise changing them after
 // a constraint was added will have no effect on this class.
 LinearProgrammingConstraint::LinearProgrammingConstraint(Model* model)
-    : sat_parameters_(*(model->GetOrCreate<SatParameters>())),
+    : constraint_manager_(model),
+      sat_parameters_(*(model->GetOrCreate<SatParameters>())),
       model_(model),
       time_limit_(model->GetOrCreate<TimeLimit>()),
       integer_trail_(model->GetOrCreate<IntegerTrail>()),
@@ -116,7 +119,6 @@ void LinearProgrammingConstraint::CreateLpFromConstraintManager() {
   // Fill integer_lp_.
   integer_lp_.clear();
   infinity_norms_.clear();
-  constraint_manager_.SetParameters(sat_parameters_);
   const auto& all_constraints = constraint_manager_.AllConstraints();
   for (const auto index : constraint_manager_.LpConstraints()) {
     const LinearConstraint& ct = all_constraints[index];
@@ -331,10 +333,17 @@ bool LinearProgrammingConstraint::SolveLp() {
 
   const auto status = simplex_.Solve(lp_data_, time_limit_);
   if (!status.ok()) {
-    LOG(WARNING) << "The LP solver encountered an error: "
-                 << status.error_message();
+    if (VLOG_IS_ON(1)) {
+      LOG(WARNING) << "The LP solver encountered an error: "
+                   << status.error_message();
+    }
     simplex_.ClearStateForNextSolve();
     return false;
+  }
+  average_degeneracy_.AddData(CalculateDegeneracy());
+  if (average_degeneracy_.CurrentAverage() >= 1000.0) {
+    VLOG(1) << "High average degeneracy: "
+            << average_degeneracy_.CurrentAverage();
   }
 
   if (simplex_.GetProblemStatus() == glop::ProblemStatus::OPTIMAL) {
@@ -536,7 +545,7 @@ void LinearProgrammingConstraint::AddCutFromConstraints(
       return;
     }
 
-    VLOG(2) << " num_slack: " << num_slack;
+    VLOG(3) << " num_slack: " << num_slack;
     cut = ConvertToLinearConstraint(dense_cut, cut_ub);
   }
 
@@ -615,6 +624,7 @@ void LinearProgrammingConstraint::AddMirCuts() {
   for (RowIndex row(0); row < num_rows; ++row) {
     const auto status = simplex_.GetConstraintStatus(row);
     if (status == glop::ConstraintStatus::BASIC) continue;
+    if (status == glop::ConstraintStatus::FREE) continue;
 
     // TODO(user): Do not consider just one constraint, but take linear
     // combination of a small number of constraints. There is a lot of
@@ -647,9 +657,11 @@ bool LinearProgrammingConstraint::Propagate() {
   // Put an iteration limit on the work we do in the simplex for this call. Note
   // that because we are "incremental", even if we don't solve it this time we
   // will make progress towards a solve in the lower node of the tree search.
-  //
-  // TODO(user): Put more at the root, and less afterwards?
-  parameters.set_max_number_of_iterations(500);
+  if (trail_->CurrentDecisionLevel() == 0) {
+    parameters.set_max_number_of_iterations(2000);
+  } else {
+    parameters.set_max_number_of_iterations(500);
+  }
   if (sat_parameters_.use_exact_lp_reason()) {
     parameters.set_change_status_to_imprecise(false);
     parameters.set_primal_feasibility_tolerance(1e-7);
@@ -689,14 +701,7 @@ bool LinearProgrammingConstraint::Propagate() {
           (trail_->CurrentDecisionLevel() == 0 ||
            !sat_parameters_.only_add_cuts_at_level_zero())) {
         for (const CutGenerator& generator : cut_generators_) {
-          // TODO(user): Change api so cuts can directly be added to the manager
-          // and we don't need this intermediate vector.
-          std::vector<LinearConstraint> cuts =
-              generator.generate_cuts(expanded_lp_solution_);
-          for (const LinearConstraint& cut : cuts) {
-            constraint_manager_.AddCut(cut, generator.type,
-                                       expanded_lp_solution_);
-          }
+          generator.generate_cuts(expanded_lp_solution_, &constraint_manager_);
         }
       }
 
@@ -883,6 +888,67 @@ bool LinearProgrammingConstraint::PossibleOverflow(
     return true;
   }
   return false;
+}
+
+namespace {
+
+absl::int128 FloorRatio128(absl::int128 x, IntegerValue positive_div) {
+  absl::int128 div128(positive_div.value());
+  absl::int128 result = x / div128;
+  if (result * div128 > x) return result - 1;
+  return result;
+}
+
+}  // namespace
+
+void LinearProgrammingConstraint::PreventOverflow(LinearConstraint* constraint,
+                                                  int max_pow) {
+  // Compute the min/max possible partial sum.
+  double sum_min = std::min(0.0, ToDouble(-constraint->ub));
+  double sum_max = std::max(0.0, ToDouble(-constraint->ub));
+  const int size = constraint->vars.size();
+  for (int i = 0; i < size; ++i) {
+    const IntegerVariable var = constraint->vars[i];
+    const double coeff = ToDouble(constraint->coeffs[i]);
+    const double prod1 = coeff * ToDouble(integer_trail_->LowerBound(var));
+    const double prod2 = coeff * ToDouble(integer_trail_->UpperBound(var));
+    sum_min += std::min(0.0, std::min(prod1, prod2));
+    sum_max += std::max(0.0, std::max(prod1, prod2));
+  }
+  const double max_value = std::max(sum_max, -sum_min);
+
+  const IntegerValue divisor(std::ceil(std::ldexp(max_value, -max_pow)));
+  if (divisor <= 1) return;
+
+  // To be correct, we need to shift all variable so that they are positive.
+  //
+  // TODO(user): This code is tricky and similar to the one to generate cuts.
+  // Test and may reduce the duplication? note however that here we use int128
+  // to deal with potential overflow.
+  int new_size = 0;
+  absl::int128 adjust = 0;
+  for (int i = 0; i < size; ++i) {
+    const IntegerValue old_coeff = constraint->coeffs[i];
+    const IntegerValue new_coeff = FloorRatio(old_coeff, divisor);
+
+    // Compute the rhs adjustement.
+    const absl::int128 remainder =
+        absl::int128(old_coeff.value()) -
+        absl::int128(new_coeff.value()) * absl::int128(divisor.value());
+    adjust +=
+        remainder *
+        absl::int128(integer_trail_->LowerBound(constraint->vars[i]).value());
+
+    if (new_coeff == 0) continue;
+    constraint->vars[new_size] = constraint->vars[i];
+    constraint->coeffs[new_size] = new_coeff;
+    ++new_size;
+  }
+  constraint->vars.resize(new_size);
+  constraint->coeffs.resize(new_size);
+
+  constraint->ub = IntegerValue(static_cast<int64>(
+      FloorRatio128(absl::int128(constraint->ub.value()) - adjust, divisor)));
 }
 
 // TODO(user): combine this with RelaxLinearReason() to avoid the extra
@@ -1175,9 +1241,12 @@ bool LinearProgrammingConstraint::ExactLpReasonning() {
 
   gtl::ITIVector<ColIndex, IntegerValue> reduced_costs;
   IntegerValue rc_ub;
-  CHECK(ComputeNewLinearConstraint(
-      /*use_constraint_status=*/false, integer_multipliers, &reduced_costs,
-      &rc_ub));
+  if (!ComputeNewLinearConstraint(
+          /*use_constraint_status=*/false, integer_multipliers, &reduced_costs,
+          &rc_ub)) {
+    VLOG(1) << "Issue while computing the exact LP reason. Aborting.";
+    return true;
+  }
 
   // The "objective constraint" behave like if the unscaled cp multiplier was
   // 1.0, so we will multiply it by this number and add it to reduced_costs.
@@ -1198,12 +1267,8 @@ bool LinearProgrammingConstraint::ExactLpReasonning() {
   new_constraint.vars.push_back(objective_cp_);
   new_constraint.coeffs.push_back(-obj_scale);
   DivideByGCD(&new_constraint);
-
-  // Check for possible overflow in IntegerSumLE::Propagate().
-  if (PossibleOverflow(new_constraint)) {
-    VLOG(2) << "Overflow during exact LP reasoning.";
-    return true;
-  }
+  PreventOverflow(&new_constraint);
+  CHECK(!PossibleOverflow(new_constraint));
 
   IntegerSumLE* cp_constraint =
       new IntegerSumLE({}, new_constraint.vars, new_constraint.coeffs,
@@ -1222,9 +1287,12 @@ bool LinearProgrammingConstraint::FillExactDualRayReason() {
 
   gtl::ITIVector<ColIndex, IntegerValue> dense_new_constraint;
   IntegerValue new_constraint_ub;
-  CHECK(ComputeNewLinearConstraint(
-      /*use_constraint_status=*/false, integer_multipliers,
-      &dense_new_constraint, &new_constraint_ub));
+  if (!ComputeNewLinearConstraint(
+          /*use_constraint_status=*/false, integer_multipliers,
+          &dense_new_constraint, &new_constraint_ub)) {
+    VLOG(1) << "Isse while computing the exact dual ray reason. Aborting.";
+    return false;
+  }
 
   AdjustNewLinearConstraint(&integer_multipliers, &dense_new_constraint,
                             &new_constraint_ub);
@@ -1232,10 +1300,9 @@ bool LinearProgrammingConstraint::FillExactDualRayReason() {
   LinearConstraint new_constraint =
       ConvertToLinearConstraint(dense_new_constraint, new_constraint_ub);
   DivideByGCD(&new_constraint);
-  if (PossibleOverflow(new_constraint)) {
-    VLOG(2) << "Overflow during exact LP reasoning.";
-    return true;
-  }
+  PreventOverflow(&new_constraint);
+  CHECK(!PossibleOverflow(new_constraint));
+
   const IntegerValue implied_lb = GetImpliedLowerBound(new_constraint);
   if (implied_lb <= new_constraint.ub) {
     VLOG(1) << "LP exact dual ray not infeasible,"
@@ -1263,6 +1330,20 @@ void LinearProgrammingConstraint::FillReducedCostsReason() {
   }
 
   integer_trail_->RemoveLevelZeroBounds(&integer_reason_);
+}
+
+int64 LinearProgrammingConstraint::CalculateDegeneracy() const {
+  const glop::ColIndex num_vars = simplex_.GetProblemNumCols();
+  int num_non_basic_with_zero_rc = 0;
+  for (glop::ColIndex i(0); i < num_vars; ++i) {
+    const double rc = simplex_.GetReducedCost(i);
+    if (rc != 0.0) continue;
+    if (simplex_.GetVariableStatus(i) == glop::VariableStatus::BASIC) {
+      continue;
+    }
+    num_non_basic_with_zero_rc++;
+  }
+  return num_non_basic_with_zero_rc;
 }
 
 void LinearProgrammingConstraint::FillDualRayReason() {
@@ -1336,7 +1417,8 @@ void AddIncomingAndOutgoingCutsIfNeeded(
     int num_nodes, const std::vector<int>& s, const std::vector<int>& tails,
     const std::vector<int>& heads, const std::vector<IntegerVariable>& vars,
     const std::vector<double>& var_lp_values, int64 rhs_lower_bound,
-    std::vector<LinearConstraint>* cuts) {
+    const gtl::ITIVector<IntegerVariable, double>& lp_values,
+    LinearConstraintManager* manager) {
   LinearConstraint incoming;
   LinearConstraint outgoing;
   double sum_incoming = 0.0;
@@ -1426,10 +1508,10 @@ void AddIncomingAndOutgoingCutsIfNeeded(
   }
 
   if (sum_incoming < rhs_lower_bound - 1e-6) {
-    cuts->push_back(std::move(incoming));
+    manager->AddCut(incoming, "Circuit", lp_values);
   }
   if (sum_outgoing < rhs_lower_bound - 1e-6) {
-    cuts->push_back(std::move(outgoing));
+    manager->AddCut(outgoing, "Circuit", lp_values);
   }
 }
 
@@ -1443,10 +1525,10 @@ CutGenerator CreateStronglyConnectedGraphCutGenerator(
     const std::vector<IntegerVariable>& vars) {
   CutGenerator result;
   result.vars = vars;
-  result.type = "StronglyConnectedGraph";
   result.generate_cuts =
-      [num_nodes, tails, heads,
-       vars](const gtl::ITIVector<IntegerVariable, double>& lp_values) {
+      [num_nodes, tails, heads, vars](
+          const gtl::ITIVector<IntegerVariable, double>& lp_values,
+          LinearConstraintManager* manager) {
         int num_arcs_in_lp_solution = 0;
         std::vector<double> var_lp_values;
         std::vector<std::vector<int>> graph(num_nodes);
@@ -1463,23 +1545,21 @@ CutGenerator CreateStronglyConnectedGraphCutGenerator(
             graph[tails[i]].push_back(heads[i]);
           }
         }
-        std::vector<LinearConstraint> cuts;
         std::vector<std::vector<int>> components;
         FindStronglyConnectedComponents(num_nodes, graph, &components);
-        if (components.size() == 1) return cuts;
+        if (components.size() == 1) return;
 
         VLOG(1) << "num_arcs_in_lp_solution:" << num_arcs_in_lp_solution
                 << " sccs:" << components.size();
         for (const std::vector<int>& component : components) {
           if (component.size() == 1) continue;
-          AddIncomingAndOutgoingCutsIfNeeded(num_nodes, component, tails, heads,
-                                             vars, var_lp_values,
-                                             /*rhs_lower_bound=*/1, &cuts);
+          AddIncomingAndOutgoingCutsIfNeeded(
+              num_nodes, component, tails, heads, vars, var_lp_values,
+              /*rhs_lower_bound=*/1, lp_values, manager);
 
           // In this case, the cuts for each component are the same.
           if (components.size() == 2) break;
         }
-        return cuts;
       };
   return result;
 }
@@ -1496,10 +1576,10 @@ CutGenerator CreateCVRPCutGenerator(int num_nodes,
 
   CutGenerator result;
   result.vars = vars;
-  result.type = "CVRP";
   result.generate_cuts =
-      [num_nodes, tails, heads, total_demands, demands, capacity,
-       vars](const gtl::ITIVector<IntegerVariable, double>& lp_values) {
+      [num_nodes, tails, heads, total_demands, demands, capacity, vars](
+          const gtl::ITIVector<IntegerVariable, double>& lp_values,
+          LinearConstraintManager* manager) {
         int num_arcs_in_lp_solution = 0;
         std::vector<double> var_lp_values;
         std::vector<std::vector<int>> graph(num_nodes);
@@ -1510,10 +1590,9 @@ CutGenerator CreateCVRPCutGenerator(int num_nodes,
             graph[tails[i]].push_back(heads[i]);
           }
         }
-        std::vector<LinearConstraint> cuts;
         std::vector<std::vector<int>> components;
         FindStronglyConnectedComponents(num_nodes, graph, &components);
-        if (components.size() == 1) return cuts;
+        if (components.size() == 1) return;
 
         VLOG(1) << "num_arcs_in_lp_solution:" << num_arcs_in_lp_solution
                 << " sccs:" << components.size();
@@ -1534,12 +1613,11 @@ CutGenerator CreateCVRPCutGenerator(int num_nodes,
 
           AddIncomingAndOutgoingCutsIfNeeded(
               num_nodes, component, tails, heads, vars, var_lp_values,
-              /*rhs_lower_bound=*/min_num_vehicles, &cuts);
+              /*rhs_lower_bound=*/min_num_vehicles, lp_values, manager);
 
           // In this case, the cuts for each component are the same.
           if (components.size() == 2) break;
         }
-        return cuts;
       };
   return result;
 }
@@ -1728,7 +1806,7 @@ LiteralIndex LinearProgrammingConstraint::LPReducedCostAverageDecision() {
   }
 
   if (selected_index == -1) return kNoLiteralIndex;
-  const IntegerVariable var = this->integer_variables_[selected_index];
+  const IntegerVariable var = integer_variables_[selected_index];
 
   // If ceil(value) is current upper bound, try var == upper bound first.
   // Guarding with >= prevents numerical problems.
@@ -1738,9 +1816,10 @@ LiteralIndex LinearProgrammingConstraint::LPReducedCostAverageDecision() {
   const IntegerValue value_ceil(
       std::ceil(this->GetSolutionValue(var) - kCpEpsilon));
   if (value_ceil >= ub) {
-    return integer_encoder_
-        ->GetOrCreateAssociatedLiteral(IntegerLiteral::GreaterOrEqual(var, ub))
-        .Index();
+    const Literal result = integer_encoder_->GetOrCreateAssociatedLiteral(
+        IntegerLiteral::GreaterOrEqual(var, ub));
+    CHECK(!trail_->Assignment().LiteralIsAssigned(result));
+    return result.Index();
   }
 
   // If floor(value) is current lower bound, try var == lower bound first.
@@ -1749,24 +1828,26 @@ LiteralIndex LinearProgrammingConstraint::LPReducedCostAverageDecision() {
   const IntegerValue value_floor(
       std::floor(this->GetSolutionValue(var) + kCpEpsilon));
   if (value_floor <= lb) {
-    return integer_encoder_
-        ->GetOrCreateAssociatedLiteral(IntegerLiteral::LowerOrEqual(var, lb))
-        .Index();
+    const Literal result = integer_encoder_->GetOrCreateAssociatedLiteral(
+        IntegerLiteral::LowerOrEqual(var, lb));
+    CHECK(!trail_->Assignment().LiteralIsAssigned(result))
+        << " " << lb << " " << ub;
+    return result.Index();
   }
 
   // Here lb < value_floor <= value_ceil < ub.
   // Try the most promising split between var <= floor or var >= ceil.
   if (sum_cost_down_[selected_index] / num_cost_down_[selected_index] <
       sum_cost_up_[selected_index] / num_cost_up_[selected_index]) {
-    return integer_encoder_
-        ->GetOrCreateAssociatedLiteral(
-            IntegerLiteral::LowerOrEqual(var, value_floor))
-        .Index();
+    const Literal result = integer_encoder_->GetOrCreateAssociatedLiteral(
+        IntegerLiteral::LowerOrEqual(var, value_floor));
+    CHECK(!trail_->Assignment().LiteralIsAssigned(result));
+    return result.Index();
   } else {
-    return integer_encoder_
-        ->GetOrCreateAssociatedLiteral(
-            IntegerLiteral::GreaterOrEqual(var, value_ceil))
-        .Index();
+    const Literal result = integer_encoder_->GetOrCreateAssociatedLiteral(
+        IntegerLiteral::GreaterOrEqual(var, value_ceil));
+    CHECK(!trail_->Assignment().LiteralIsAssigned(result));
+    return result.Index();
   }
 }
 

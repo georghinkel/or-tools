@@ -101,14 +101,15 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
   // Note that the IntegerVariable in the vector are also returned in
   // topological order for a more efficient propagation in
   // DisjunctivePrecedences::Propagate() where this is used.
+  //
+  // Important: For identical vars, the entry are sorted by index.
   struct IntegerPrecedences {
     int index;            // position in vars.
     IntegerVariable var;  // An IntegerVariable that is >= to vars[index].
     int arc_index;        // Used by AddPrecedenceReason().
-    IntegerValue offset;  // we have: input_vars[index] + offset <= var
+    IntegerValue offset;  // we have: vars[index] + offset <= var
   };
   void ComputePrecedences(const std::vector<IntegerVariable>& vars,
-                          const std::vector<bool>& to_consider,
                           std::vector<IntegerPrecedences>* output);
   void AddPrecedenceReason(int arc_index, IntegerValue min_offset,
                            std::vector<Literal>* literal_reason,
@@ -117,17 +118,29 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
   // Advanced usage. To be called once all the constraints have been added to
   // the model. This will loop over all "node" in this class, and if one of its
   // optional incoming arcs must be chosen, it will add a corresponding
-  // GreaterThanAtLeastOneOfConstraint(). Note that this might be a bit slow as
-  // it relies on the propagation engine to detect clauses between incoming arcs
-  // presence literals.
+  // GreaterThanAtLeastOneOfConstraint(). Returns the number of added
+  // constraint.
   //
   // TODO(user): This can be quite slow, add some kind of deterministic limit
   // so that we can use it all the time.
-  void AddGreaterThanAtLeastOneOfConstraints(Model* model);
+  int AddGreaterThanAtLeastOneOfConstraints(Model* model);
 
  private:
   DEFINE_INT_TYPE(ArcIndex, int);
   DEFINE_INT_TYPE(OptionalArcIndex, int);
+
+  // Given an existing clause, sees if it can be used to add "greater than at
+  // least one of" type of constraints. Returns the number of such constraint
+  // added.
+  int AddGreaterThanAtLeastOneOfConstraintsFromClause(
+      const absl::Span<const Literal> clause, Model* model);
+
+  // Another approach for AddGreaterThanAtLeastOneOfConstraints(), this one
+  // might be a bit slow as it relies on the propagation engine to detect
+  // clauses between incoming arcs presence literals.
+  // Returns the number of added constraints.
+  int AddGreaterThanAtLeastOneOfConstraintsWithClauseAutoDetection(
+      Model* model);
 
   // Information about an individual arc.
   struct ArcInfo {

@@ -20,14 +20,14 @@ PROTOC_BINARY := $(shell $(WHICH) ${UNIX_PROTOC_BINARY})
 
 # Tags of dependencies to checkout.
 GFLAGS_TAG = 2.2.2
-GLOG_TAG = 0.3.5
-PROTOBUF_TAG = 3.6.1
+GLOG_TAG = 0.4.0
+PROTOBUF_TAG = 3.7.1
 ABSL_TAG = bf29470
-CBC_TAG = 2.9.9
-CGL_TAG = 0.59.10
-CLP_TAG = 1.16.11
-OSI_TAG = 0.107.9
-COINUTILS_TAG = 2.10.14
+CBC_TAG = 2.10.1
+CGL_TAG = 0.60.1
+CLP_TAG = 1.17.1
+OSI_TAG = 0.108.1
+COINUTILS_TAG = 2.11.1
 PATCHELF_TAG = 0.9
 
 # Main target.
@@ -112,19 +112,12 @@ endif
 .PHONY: build_third_party
 build_third_party: \
  Makefile.local \
- archives_directory \
  install_deps_directories \
  build_gflags \
  build_glog \
  build_protobuf \
  build_absl \
  build_cbc
-
-.PHONY: archives_directory
-archives_directory: dependencies/archives
-
-dependencies/archives:
-	$(MKDIR_P) dependencies$Sarchives
 
 .PHONY: install_deps_directories
 install_deps_directories: \
@@ -773,12 +766,6 @@ SWIG_BINARY = $(shell $(WHICH) $(UNIX_SWIG_BINARY))
 clean_third_party:
 	-$(DEL) Makefile.local
 	-$(DEL) dependencies/check.log
-	-$(DELREC) dependencies/archives/Cbc*
-	-$(DELREC) dependencies/archives/Cgl*
-	-$(DELREC) dependencies/archives/Clp*
-	-$(DELREC) dependencies/archives/Osi*
-	-$(DELREC) dependencies/archives/CoinUtils*
-	-$(DELREC) dependencies/archives
 	-$(DELREC) dependencies/sources/gflags*
 	-$(DELREC) dependencies/sources/glog*
 	-$(DELREC) dependencies/sources/protobuf*

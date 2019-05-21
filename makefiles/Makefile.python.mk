@@ -43,6 +43,7 @@ PYCP_LIBS = $(LIB_DIR)/_pywrapcp.$(SWIG_PYTHON_LIB_SUFFIX)
 PYLP_LIBS = $(LIB_DIR)/_pywraplp.$(SWIG_PYTHON_LIB_SUFFIX)
 PYSAT_LIBS = $(LIB_DIR)/_pywrapsat.$(SWIG_PYTHON_LIB_SUFFIX)
 PYDATA_LIBS = $(LIB_DIR)/_pywraprcpsp.$(SWIG_PYTHON_LIB_SUFFIX)
+PYSORTED_INTERVAL_LIST_LIBS = $(LIB_DIR)/_sorted_interval_list.$(SWIG_PYTHON_LIB_SUFFIX)
 PYTHON_OR_TOOLS_LIBS = \
  $(GEN_DIR)/ortools/__init__.py \
  $(PYALGORITHMS_LIBS) \
@@ -50,7 +51,8 @@ PYTHON_OR_TOOLS_LIBS = \
  $(PYCP_LIBS) \
  $(PYLP_LIBS) \
  $(PYSAT_LIBS) \
- $(PYDATA_LIBS)
+ $(PYDATA_LIBS) \
+ $(PYSORTED_INTERVAL_LIST_LIBS)
 
 # Main target
 .PHONY: python # Build Python OR-Tools.
@@ -244,7 +246,7 @@ $(GEN_DIR)/ortools/constraint_solver/pywrapcp.py: \
  $(CP_LIB_OBJS) \
  $(PROTOBUF_PYTHON_DESC) \
  | $(GEN_DIR)/ortools/constraint_solver
-	$(SWIG_BINARY) $(SWIG_INC) -I$(INC_DIR) -c++ -python $(SWIG_PYTHON3_FLAG) \
+	$(SWIG_BINARY) $(SWIG_INC) -I$(INC_DIR) -c++ -python -nofastunpack $(SWIG_PYTHON3_FLAG) \
  -o $(GEN_PATH)$Sortools$Sconstraint_solver$Sconstraint_solver_python_wrap.cc \
  -module pywrapcp \
  $(SRC_DIR)/ortools/constraint_solver$Spython$Srouting.i
@@ -453,6 +455,51 @@ else
 	cp $(PYDATA_LIBS) $(GEN_PATH)/ortools/data
 endif
 
+# sorted_interval_list
+ifeq ($(PLATFORM),MACOSX)
+PYSORTED_INTERVAL_LIST_LDFLAGS = -install_name @rpath/_sorted_interval_list.$(SWIG_PYTHON_LIB_SUFFIX) #
+endif
+
+$(GEN_DIR)/ortools/util/sorted_interval_list.py: \
+ $(SRC_DIR)/ortools/util/sorted_interval_list.h \
+ $(SRC_DIR)/ortools/base/base.i \
+ $(SRC_DIR)/ortools/util/python/vector.i \
+ $(SRC_DIR)/ortools/util/python/sorted_interval_list.i \
+ $(UTIL_DEPS) \
+ | $(GEN_DIR)/ortools/util
+	$(SWIG_BINARY) $(SWIG_INC) -I$(INC_DIR) -c++ -python $(SWIG_PYTHON3_FLAG) \
+ -o $(GEN_PATH)$Sortools$Sutil$Ssorted_interval_list_python_wrap.cc \
+ -module sorted_interval_list \
+ $(SRC_DIR)$Sortools$Sutil$Spython$Ssorted_interval_list.i
+	$(SED) -i -e 's/< long long >/< int64 >/g' \
+ $(GEN_PATH)$Sortools$Sutil$Ssorted_interval_list_python_wrap.cc
+
+$(GEN_DIR)/ortools/util/sorted_interval_list_python_wrap.cc: \
+ $(GEN_DIR)/ortools/util/sorted_interval_list.py
+
+$(OBJ_DIR)/swig/sorted_interval_list_python_wrap.$O: \
+ $(GEN_DIR)/ortools/util/sorted_interval_list_python_wrap.cc \
+ $(UTIL_DEPS) \
+ | $(OBJ_DIR)/swig
+	$(CCC) $(CFLAGS) $(PYTHON_INC) $(PYTHON3_CFLAGS) \
+ -c $(GEN_PATH)$Sortools$Sutil$Ssorted_interval_list_python_wrap.cc \
+ $(OBJ_OUT)$(OBJ_DIR)$Sswig$Ssorted_interval_list_python_wrap.$O
+
+$(PYSORTED_INTERVAL_LIST_LIBS): $(OBJ_DIR)/swig/sorted_interval_list_python_wrap.$O $(OR_TOOLS_LIBS)
+	$(DYNAMIC_LD) \
+ $(PYSORTED_INTERVAL_LIST_LDFLAGS) \
+ $(LD_OUT)$(LIB_DIR)$S_sorted_interval_list.$(SWIG_PYTHON_LIB_SUFFIX) \
+ $(OBJ_DIR)$Sswig$Ssorted_interval_list_python_wrap.$O \
+ $(OR_TOOLS_LNK) \
+ $(SYS_LNK) \
+ $(PYTHON_LNK) \
+ $(PYTHON_LDFLAGS)
+ifeq ($(SYSTEM),win)
+	copy $(LIB_DIR)$S_sorted_interval_list.$(SWIG_PYTHON_LIB_SUFFIX) $(GEN_PATH)\\ortools\\util\\_sorted_interval_list.pyd
+else
+	cp $(PYSORTED_INTERVAL_LIST_LIBS) $(GEN_PATH)/ortools/util
+endif
+
 #######################
 ##  Python SOURCE  ##
 #######################
@@ -515,6 +562,7 @@ test_python_constraint_solver_samples: \
  rpy_vrp_resources \
  rpy_vrp_starts_ends \
  rpy_vrp_time_windows \
+ rpy_vrp_with_time_limit \
  \
  rpy_vrpgs \
  rpy_cvrp \
@@ -581,6 +629,7 @@ check_python_pimpl: \
 
 .PHONY: test_python_tests # Run all Python Tests (located in examples/tests)
 test_python_tests: \
+ rpy_lp_test \
  rpy_cp_model_test \
  rpy_test_cp_api \
  rpy_test_routing_api \
@@ -820,8 +869,8 @@ clean_python:
 	-$(DEL) ortools$Sutil$S*.pyc
 	-$(DELREC) ortools$Sutil$S__pycache__
 	-$(DEL) $(GEN_PATH)$Sortools$Sutil$S*_python_wrap.*
-	-$(DEL) $(GEN_PATH)$Sortools$Sutil$S_pywrap*
-	-$(DEL) $(LIB_DIR)$S_pywrap*.$(SWIG_PYTHON_LIB_SUFFIX)
+	-$(DEL) $(GEN_PATH)$Sortools$Sutil$S_*
+	-$(DEL) $(LIB_DIR)$S_*.$(SWIG_PYTHON_LIB_SUFFIX)
 	-$(DEL) $(OBJ_DIR)$Sswig$S*python_wrap.$O
 	-$(DELREC) temp_python*
 
@@ -876,18 +925,18 @@ ifeq ($(UNIX_GFLAGS_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 endif
 ifeq ($(UNIX_GLOG_DIR),$(OR_TOOLS_TOP)/dependencies/install)
   ifeq ($(PLATFORM),MACOSX)
-    PYTHON_SETUP_DEPS += , 'libglog.0.3.5.$L'
+    PYTHON_SETUP_DEPS += , 'libglog.0.4.0.$L'
   endif
   ifeq ($(PLATFORM),LINUX)
-    PYTHON_SETUP_DEPS += , 'libglog.$L.0.3.5'
+    PYTHON_SETUP_DEPS += , 'libglog.$L.0.4.0'
   endif
 endif
 ifeq ($(UNIX_PROTOBUF_DIR),$(OR_TOOLS_TOP)/dependencies/install)
   ifeq ($(PLATFORM),MACOSX)
-    PYTHON_SETUP_DEPS += , 'libprotobuf.3.6.1.$L'
+    PYTHON_SETUP_DEPS += , 'libprotobuf.3.7.1.0.$L'
   endif
   ifeq ($(PLATFORM),LINUX)
-    PYTHON_SETUP_DEPS += , 'libprotobuf.$L.3.6.1'
+    PYTHON_SETUP_DEPS += , 'libprotobuf.$L.3.7.1.0'
   endif
 endif
 ifeq ($(UNIX_ABSL_DIR),$(OR_TOOLS_TOP)/dependencies/install)
@@ -1006,27 +1055,29 @@ $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/data: $(PYDATA_LIBS) | $(PYPI_ARCHIVE_T
 	$(COPY) $(GEN_PATH)$Sortools$Sdata$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sdata
 	$(COPY) $(GEN_PATH)$Sortools$Sdata$S_pywraprcpsp.* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sdata
 
-$(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/util: | $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools
+$(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/util: $(PYUTIL_LIBS) | $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools
 	-$(DELREC) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
 	-$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
 	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil$S__init__.py
 	$(COPY) $(GEN_PATH)$Sortools$Sutil$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
+	$(COPY) $(GEN_PATH)$Sortools$Sutil$S_sorted_interval_list.* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
 
 $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/.libs: | $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools
 	-$(DELREC) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 	-$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 
 ifneq ($(PYTHON_EXECUTABLE),)
-.PHONY: pypi_archive # Create Python "ortools" wheel package
-pypi_archive: $(OR_TOOLS_LIBS) python $(MISSING_PYPI_FILES)
+.PHONY: python_package # Create Python "ortools" wheel package
+.PHONY: pypi_archive
+python_package pypi_archive: $(OR_TOOLS_LIBS) python $(MISSING_PYPI_FILES)
 ifneq ($(SYSTEM),win)
 	cp $(OR_TOOLS_LIBS) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/.libs
 endif
 ifeq ($(UNIX_GFLAGS_DIR),$(OR_TOOLS_TOP)/dependencies/install)
-	$(COPYREC) dependencies$Sinstall$Slib$Slibgflags* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$Slibgflags* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 endif
 ifeq ($(UNIX_GLOG_DIR),$(OR_TOOLS_TOP)/dependencies/install)
-	$(COPYREC) dependencies$Sinstall$Slib$Slibglog* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$Slibglog* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 endif
 ifeq ($(UNIX_PROTOBUF_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	$(COPYREC) $(subst /,$S,$(_PROTOBUF_LIB_DIR))libproto* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
@@ -1035,16 +1086,17 @@ ifeq ($(UNIX_ABSL_DIR),$(OR_TOOLS_TOP)/dependencies/install)
 	-$(COPYREC) $(subst /,$S,$(_ABSL_LIB_DIR))$Slibabsl* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 endif
 ifeq ($(UNIX_CBC_DIR),$(OR_TOOLS_TOP)/dependencies/install)
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCbc* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCgl* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
-	$(COPYREC) dependencies$Sinstall$Slib$SlibClp* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
-	$(COPYREC) dependencies$Sinstall$Slib$SlibOsi* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
-	$(COPYREC) dependencies$Sinstall$Slib$SlibCoinUtils* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCbc* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCgl* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibClp* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibOsi* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
+	$(COPYREC) dependencies$Sinstall$Slib*$SlibCoinUtils* $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S.libs
 endif
 	cd $(PYPI_ARCHIVE_TEMP_DIR)$Sortools && "$(PYTHON_EXECUTABLE)" setup.py bdist_wheel
 
-.PHONY: test_pypi_archive # Test Python "ortools" wheel package
-test_pypi_archive: pypi_archive
+.PHONY: test_python_package # Test Python "ortools" wheel package
+.PHONY: test_pypi_archive
+test_python_package test_pypi_archive: python_package
 	-$(DELREC) $(PYPI_ARCHIVE_TEMP_DIR)$Svenv
 	$(PYTHON_EXECUTABLE) -m virtualenv $(PYPI_ARCHIVE_TEMP_DIR)$Svenv
 	$(COPY) test.py.in $(PYPI_ARCHIVE_TEMP_DIR)$Svenv$Stest.py

@@ -167,6 +167,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/hash/hash.h"
+#include "absl/time/time.h"
 #include "ortools/base/adjustable_priority_queue-inl.h"
 #include "ortools/base/adjustable_priority_queue.h"
 #include "ortools/base/commandlineflags.h"
@@ -679,18 +680,28 @@ class RoutingModel {
     return pickup_delivery_disjunctions_;
   }
 #endif  // SWIG
-  // Set the node visit types and incompatibilities between the types.
-  // Two nodes with "hard" incompatible types cannot share the same route at
-  // all, while with a "temporal" incompatibility they can't be on the same
-  // route at the same time.
+  // Set the node visit types and incompatibilities/requirements between the
+  // types (see below).
   // NOTE: The visit type of a node must be positive, and all nodes belonging to
   // the same pickup/delivery pair must have the same type (or no type at all).
-  // NOTE: These incompatibilities are only handled when each node index appears
-  // in at most one pickup/delivery pair, i.e. when the same node isn't a pickup
-  // and/or delivery in multiple pickup/delivery pairs.
+  // NOTE: Before adding any incompatibilities and/or requirements on types:
+  //       1) All corresponding node types must have been set.
+  //       2) CloseVisitTypes() must be called so all containers are resized
+  //          accordingly.
+  // NOTE: These incompatibilities and requirements are only handled when each
+  // node index appears in at most one pickup/delivery pair, i.e. when the same
+  // node isn't a pickup and/or delivery in multiple pickup/delivery pairs.
   // TODO(user): Support multiple visit types per node?
   void SetVisitType(int64 index, int type);
   int GetVisitType(int64 index) const;
+  // This function should be called once all node visit types have been set and
+  // prior to adding any incompatibilities/requirements.
+  void CloseVisitTypes();
+  int GetNumberOfVisitTypes() const { return num_visit_types_; }
+  // Incompatibilities:
+  // Two nodes with "hard" incompatible types cannot share the same route at
+  // all, while with a "temporal" incompatibility they can't be on the same
+  // route at the same time.
   void AddHardTypeIncompatibility(int type1, int type2);
   void AddTemporalTypeIncompatibility(int type1, int type2);
   // Returns visit types incompatible with a given type.
@@ -698,20 +709,42 @@ class RoutingModel {
       int type) const;
   const absl::flat_hash_set<int>& GetTemporalTypeIncompatibilitiesOfType(
       int type) const;
-  // Returns types incompatible with a given node index.
-  const absl::flat_hash_set<int>& GetHardTypeIncompatibilitiesOfNode(
-      int64 index) const;
-  const absl::flat_hash_set<int>& GetTemporalTypeIncompatibilitiesOfNode(
-      int64 index) const;
   // Returns true iff any hard (resp. temporal) type incompatibilities have been
   // added to the model.
   bool HasHardTypeIncompatibilities() const {
-    return !hard_incompatible_types_per_type_index_.empty();
+    return has_hard_type_incompatibilities_;
   }
   bool HasTemporalTypeIncompatibilities() const {
-    return !temporal_incompatible_types_per_type_index_.empty();
+    return has_temporal_type_incompatibilities_;
   }
-  int GetNumberOfVisitTypes() const { return num_visit_types_; }
+  // Requirements:
+  // If type_D temporally depends on type_R, any non-delivery node_D of type_D
+  // requires at least one non-delivered node of type_R on its vehicle at the
+  // time node_D is visited.
+  // NOTE: As of 2019-04, cycles in the requirement graph are not supported,
+  // and lead to the dependent nodes being skipped if possible (otherwise
+  // the model is considered infeasible).
+  // The following function specifies that "dependent_type" requires at least
+  // one of the types in "required_type_alternatives".
+  void AddTemporalRequiredTypeAlternatives(
+      int dependent_type, absl::flat_hash_set<int> required_type_alternatives);
+  // clang-format off
+  // Returns all sets of requirement alternatives for the given type.
+  const std::vector<absl::flat_hash_set<int> >&
+      GetTemporalRequiredTypeAlternativesOfType(int type) const;
+  // clang-format on
+  // Returns true iff any type requirements have been added to the model.
+  bool HasTemporalTypeRequirements() const {
+    return has_temporal_type_requirements_;
+  }
+
+  // Returns true iff the model has any incompatibilities or requirements set
+  // on node types.
+  bool HasTypeRegulations() const {
+    return HasTemporalTypeIncompatibilities() ||
+           HasHardTypeIncompatibilities() || HasTemporalTypeRequirements();
+  }
+
   // Get the "unperformed" penalty of a node. This is only well defined if the
   // node is only part of a single Disjunction involving only itself, and that
   // disjunction has a penalty. In all other cases, including forced active
@@ -768,6 +801,16 @@ class RoutingModel {
   }
   const std::vector<int64>& GetAmortizedQuadraticCostFactorOfVehicles() const {
     return quadratic_cost_factor_of_vehicle_;
+  }
+
+  void ConsiderEmptyRouteCostsForVehicle(bool consider_costs, int vehicle) {
+    DCHECK_LT(vehicle, vehicles_);
+    consider_empty_route_costs_[vehicle] = consider_costs;
+  }
+
+  bool AreEmptyRouteCostsConsideredForVehicle(int vehicle) const {
+    DCHECK_LT(vehicle, vehicles_);
+    return consider_empty_route_costs_[vehicle];
   }
 
 // Search
@@ -949,7 +992,7 @@ class RoutingModel {
   // Returns the assignment resulting from allocating these packed cumuls with
   // the solver, and nullptr if these cumuls could not be set by the solver.
   const Assignment* PackCumulsOfGlobalOptimizerDimensionsFromAssignment(
-      const Assignment* original_assignment);
+      const Assignment* original_assignment, absl::Duration duration_limit);
 #ifndef SWIG
   // TODO(user): Revisit if coordinates are added to the RoutingModel class.
   void SetSweepArranger(SweepArranger* sweep_arranger) {
@@ -980,6 +1023,9 @@ class RoutingModel {
   bool IsStart(int64 index) const;
   // Returns true if 'index' represents the last node of a route.
   bool IsEnd(int64 index) const { return index >= Size(); }
+  // Returns the vehicle of the given start/end index, and -1 if the given index
+  // is not a vehicle start/end.
+  int VehicleIndex(int index) const { return index_to_vehicle_[index]; }
   // Assignment inspection
   // Returns the variable index of the node directly after the node
   // corresponding to 'index' in 'assignment'.
@@ -1000,6 +1046,11 @@ class RoutingModel {
   IntVar* NextVar(int64 index) const { return nexts_[index]; }
   // Returns the active variable of the node corresponding to index.
   IntVar* ActiveVar(int64 index) const { return active_[index]; }
+  // Returns the variable specifying whether or not costs are considered for
+  // vehicle.
+  IntVar* VehicleCostsConsideredVar(int vehicle) const {
+    return vehicle_costs_considered_[vehicle];
+  }
   // Returns the vehicle variable of the node corresponding to index. Note that
   // VehicleVar(index) == -1 is equivalent to ActiveVar(index) == 0.
   IntVar* VehicleVar(int64 index) const { return vehicle_vars_[index]; }
@@ -1091,7 +1142,16 @@ class RoutingModel {
   Solver* solver() const { return solver_.get(); }
 
   // Returns true if the search limit has been crossed.
-  bool CheckLimit() { return limit_->Check(); }
+  bool CheckLimit() {
+    DCHECK(limit_ != nullptr);
+    return limit_->Check();
+  }
+
+  // Returns the time left in the search limit.
+  absl::Duration RemainingTime() const {
+    DCHECK(limit_ != nullptr);
+    return limit_->AbsoluteSolverDeadline() - solver_->Now();
+  }
 
   // Sizes and indices
   // Returns the number of nodes in the model.
@@ -1112,10 +1172,6 @@ class RoutingModel {
   bool IsMatchingModel() const;
 
 #ifndef SWIG
-  // Returns the glop parameters for local/global LPs.
-  glop::GlopParameters GetGlopParametersForLocalLP() const;
-  glop::GlopParameters GetGlopParametersForGlobalLP() const;
-
   // Sets the callback returning the variable to use for the Tabu Search
   // metaheuristic.
   using GetTabuVarsCallback =
@@ -1194,6 +1250,7 @@ class RoutingModel {
     INACTIVE_LNS,
     EXCHANGE_RELOCATE_PAIR,
     RELOCATE_SUBTRIP,
+    EXCHANGE_SUBTRIP,
     LOCAL_SEARCH_OPERATOR_COUNTER
   };
 
@@ -1270,8 +1327,7 @@ class RoutingModel {
   // On the other hand, when transits on a route can be negative, no assumption
   // can be made on the cumuls of nodes wrt the start cumuls, and the offset is
   // therefore set to 0.
-  void StoreDimensionsForDimensionCumulOptimizers(
-      const RoutingSearchParameters& parameters);
+  void StoreDimensionsForDimensionCumulOptimizers();
 
   void ComputeCostClasses(const RoutingSearchParameters& parameters);
   void ComputeVehicleClasses();
@@ -1297,15 +1353,6 @@ class RoutingModel {
   // Sets up pickup and delivery sets.
   void AddPickupAndDeliverySetsInternal(const std::vector<int64>& pickups,
                                         const std::vector<int64>& deliveries);
-  // Setup/access type incompatibilities.
-  // clang-format off
-  void AddTypeIncompatibilityInternal(int type1, int type2,
-                                      std::vector<absl::flat_hash_set<int> >*
-                                          incompatible_types_per_type_index);
-  const absl::flat_hash_set<int>& GetTypeIncompatibilitiesOfTypeInternal(
-      int type, const std::vector<absl::flat_hash_set<int> >&
-                    incompatible_types_per_type_index) const;
-  // clang-format on
   // Returns the cost variable related to the soft same vehicle constraint of
   // index 'vehicle_index'.
   IntVar* CreateSameVehicleCost(int vehicle_index);
@@ -1362,10 +1409,10 @@ class RoutingModel {
   // TODO(user): Document each auxiliary method.
   Assignment* GetOrCreateAssignment();
   Assignment* GetOrCreateTmpAssignment();
-  SearchLimit* GetOrCreateLimit();
-  SearchLimit* GetOrCreateLocalSearchLimit();
-  SearchLimit* GetOrCreateLargeNeighborhoodSearchLimit();
-  SearchLimit* GetOrCreateFirstSolutionLargeNeighborhoodSearchLimit();
+  RegularLimit* GetOrCreateLimit();
+  RegularLimit* GetOrCreateLocalSearchLimit();
+  RegularLimit* GetOrCreateLargeNeighborhoodSearchLimit();
+  RegularLimit* GetOrCreateFirstSolutionLargeNeighborhoodSearchLimit();
   LocalSearchOperator* CreateInsertionOperator();
   LocalSearchOperator* CreateMakeInactiveOperator();
   void CreateNeighborhoodOperators(const RoutingSearchParameters& parameters);
@@ -1374,6 +1421,7 @@ class RoutingModel {
   const std::vector<LocalSearchFilter*>& GetOrCreateLocalSearchFilters();
   const std::vector<LocalSearchFilter*>& GetOrCreateFeasibilityFilters();
   DecisionBuilder* CreateSolutionFinalizer(SearchLimit* lns_limit);
+  DecisionBuilder* CreateFinalizerForMinimizedAndMaximizedVariables();
   void CreateFirstSolutionDecisionBuilders(
       const RoutingSearchParameters& search_parameters);
   DecisionBuilder* GetFirstSolutionDecisionBuilder(
@@ -1414,6 +1462,7 @@ class RoutingModel {
   std::vector<IntVar*> nexts_;
   std::vector<IntVar*> vehicle_vars_;
   std::vector<IntVar*> active_;
+  std::vector<IntVar*> vehicle_costs_considered_;
   // is_bound_to_end_[i] will be true iff the path starting at var #i is fully
   // bound and reaches the end of a route, i.e. either:
   // - IsEnd(i) is true
@@ -1435,6 +1484,15 @@ class RoutingModel {
   std::vector<int64> linear_cost_factor_of_vehicle_;
   std::vector<int64> quadratic_cost_factor_of_vehicle_;
   bool vehicle_amortized_cost_factors_set_;
+  // consider_empty_route_costs_[vehicle] determines if "vehicle" should be
+  // taken into account for costs (arc costs, span costs, etc.) even when the
+  // route of the vehicle is empty (i.e. goes straight from its start to its
+  // end).
+  // NOTE1: A vehicle's fixed cost is added iff the vehicle serves nodes on its
+  // route, regardless of this variable's value.
+  // NOTE2: The default value for this boolean is 'false' for all vehicles, i.e.
+  // by default empty routes will not contribute to the cost.
+  std::vector<bool> consider_empty_route_costs_;
 #ifndef SWIG
   gtl::ITIVector<CostClassIndex, CostClass> cost_classes_;
 #endif  // SWIG
@@ -1479,12 +1537,16 @@ class RoutingModel {
   // clang-format off
   std::vector<absl::flat_hash_set<int> >
       hard_incompatible_types_per_type_index_;
+  bool has_hard_type_incompatibilities_;
   std::vector<absl::flat_hash_set<int> >
       temporal_incompatible_types_per_type_index_;
+  bool has_temporal_type_incompatibilities_;
+
+  std::vector<std::vector<absl::flat_hash_set<int> > >
+      temporal_required_type_alternatives_per_type_index_;
+  absl::flat_hash_set<int> trivially_infeasible_visit_types_;
+  bool has_temporal_type_requirements_;
   // clang-format on
-  // Empty set used in Get[Hard|Temporal]TypeIncompatibilities() when the given
-  // type has no incompatibilities.
-  const absl::flat_hash_set<int> empty_incompatibilities_;
   int num_visit_types_;
   // Two indices are equivalent if they correspond to the same node (as given to
   // the constructors taking a RoutingIndexManager).
@@ -1530,12 +1592,10 @@ class RoutingModel {
   std::unique_ptr<SweepArranger> sweep_arranger_;
 #endif
 
-  SearchLimit* limit_ = nullptr;
-  SearchLimit* ls_limit_ = nullptr;
-  SearchLimit* lns_limit_ = nullptr;
-  SearchLimit* first_solution_lns_limit_ = nullptr;
-
-  double lp_scheduling_time_limit_seconds_ = 0;
+  RegularLimit* limit_ = nullptr;
+  RegularLimit* ls_limit_ = nullptr;
+  RegularLimit* lns_limit_ = nullptr;
+  RegularLimit* first_solution_lns_limit_ = nullptr;
 
   typedef std::pair<int64, int64> CacheKey;
   typedef absl::flat_hash_map<CacheKey, int64> TransitCallbackCache;
@@ -1587,10 +1647,14 @@ class DisjunctivePropagator {
   struct Tasks {
     int num_chain_tasks = 0;
     std::vector<int64> start_min;
+    std::vector<int64> start_max;
     std::vector<int64> duration_min;
+    std::vector<int64> duration_max;
+    std::vector<int64> end_min;
     std::vector<int64> end_max;
     std::vector<bool> is_preemptible;
     std::vector<const SortedDisjointIntervalList*> forbidden_intervals;
+    std::vector<std::pair<int64, int64>> distance_duration;
   };
 
   // Computes new bounds for all tasks, returns false if infeasible.
@@ -1609,6 +1673,7 @@ class DisjunctivePropagator {
   bool DetectablePrecedencesWithChain(Tasks* tasks);
   // Tasks might have holes in their domain, this enforces such holes.
   bool ForbiddenIntervals(Tasks* tasks);
+  bool DistanceDuration(Tasks* tasks);
 
  private:
   // The main algorithm uses Vilim's theta tree data structure.
@@ -1647,14 +1712,16 @@ class GlobalVehicleBreaksConstraint : public Constraint {
  private:
   void PropagateNode(int node);
   void PropagateVehicle(int vehicle);
+  void PropagateMaxBreakDistance(int vehicle);
+
   const RoutingModel* model_;
   const RoutingDimension* const dimension_;
   std::vector<Demon*> vehicle_demons_;
 
   // This translates pruning information to solver variables.
   // This class should have been an interface + subclasses,
-  // but that would force pointers in the tasks_ vector,
-  // which means dynamic allocation. Here tasks_'s reserved size will
+  // but that would force pointers in the user's task vector,
+  // which means dynamic allocation. Here such a vector's reserved size will
   // adjust to usage and eventually no more dynamic allocation will be made.
   class TaskTranslator {
    public:
@@ -1670,6 +1737,25 @@ class GlobalVehicleBreaksConstraint : public Constraint {
         start_->SetMin(CapAdd(group_delay_, value));
       } else if (interval_ != nullptr) {
         interval_->SetStartMin(value);
+      }
+    }
+    void SetStartMax(int64 value) {
+      if (start_ != nullptr) {
+        start_->SetMax(CapAdd(group_delay_, value));
+      } else if (interval_ != nullptr) {
+        interval_->SetStartMax(value);
+      }
+    }
+    void SetDurationMin(int64 value) {
+      if (interval_ != nullptr) {
+        interval_->SetDurationMin(value);
+      }
+    }
+    void SetEndMin(int64 value) {
+      if (start_ != nullptr) {
+        start_->SetMin(CapSub(value, duration_min_));
+      } else if (interval_ != nullptr) {
+        interval_->SetEndMin(value);
       }
     }
     void SetEndMax(int64 value) {
@@ -1693,34 +1779,73 @@ class GlobalVehicleBreaksConstraint : public Constraint {
   // This is used to restrict bounds of tasks.
   DisjunctivePropagator disjunctive_propagator_;
   DisjunctivePropagator::Tasks tasks_;
+
+  std::vector<IntVar*> cumuls_;
+  std::vector<int64> fixed_transits_;
 };
 
-class TypeIncompatibilityChecker {
+class TypeRegulationsChecker {
  public:
-  explicit TypeIncompatibilityChecker(const RoutingModel& model);
+  explicit TypeRegulationsChecker(const RoutingModel& model);
+  virtual ~TypeRegulationsChecker() {}
 
-  bool TemporalIncompatibilitiesRespectedOnVehicle(
-      int vehicle, const std::function<int64(int64)>& next_accessor) const;
+  bool CheckVehicle(int vehicle,
+                    const std::function<int64(int64)>& next_accessor);
 
-  bool AllIncompatibilitiesRespectedOnVehicle(
-      int vehicle, const std::function<int64(int64)>& next_accessor) const;
-
- private:
+ protected:
   enum PickupDeliveryStatus { PICKUP, DELIVERY, NONE };
+  struct NodeCount {
+    int non_pickup_delivery = 0;
+    int pickup = 0;
+    int delivery = 0;
+  };
 
-  // NOTE(user): As temporal incompatibilities are always verified when
-  // calling this function, we only pass 1 boolean indicating whether or not
-  // hard incompatibilities are also respected.
-  bool IncompatibilitiesRespectedOnVehicle(
-      int vehicle, const std::function<int64(int64)>& next_accessor,
-      bool check_hard_incompatibilities) const;
+  // Returns the number of pickups and fixed nodes from counts_of_type_["type"].
+  int GetNonDeliveryCount(int type) const;
+  // Same as above, but substracting the number of deliveries of "type".
+  int GetNonDeliveredCount(int type) const;
+
+  virtual bool HasRegulationsToCheck() const = 0;
+  virtual bool CheckTypeRegulations(int type) const = 0;
 
   const RoutingModel& model_;
+
+ private:
   std::vector<PickupDeliveryStatus> pickup_delivery_status_of_node_;
+  std::vector<NodeCount> counts_of_type_;
 };
 
-// The following constraint ensures that incompatibilities between types are
-// respected.
+// Checker for type incompatibilities.
+class TypeIncompatibilityChecker : public TypeRegulationsChecker {
+ public:
+  TypeIncompatibilityChecker(const RoutingModel& model,
+                             bool check_hard_incompatibilities);
+  ~TypeIncompatibilityChecker() override {}
+
+ private:
+  bool HasRegulationsToCheck() const override;
+  bool CheckTypeRegulations(int type) const override;
+  // NOTE(user): As temporal incompatibilities are always verified with this
+  // checker, we only store 1 boolean indicating whether or not hard
+  // incompatibilities are also verified.
+  bool check_hard_incompatibilities_;
+};
+
+// Checker for type requirements.
+class TypeRequirementChecker : public TypeRegulationsChecker {
+ public:
+  explicit TypeRequirementChecker(const RoutingModel& model)
+      : TypeRegulationsChecker(model) {}
+  ~TypeRequirementChecker() override {}
+
+ private:
+  bool HasRegulationsToCheck() const override;
+  bool CheckTypeRegulations(int type) const override;
+};
+
+// The following constraint ensures that incompatibilities and requirements
+// between types are respected.
+//
 // It verifies both "hard" and "temporal" incompatibilities.
 // Two nodes with hard incompatible types cannot be served by the same vehicle
 // at all, while with a temporal incompatibility they can't be on the same route
@@ -1730,19 +1855,24 @@ class TypeIncompatibilityChecker {
 // non-pickup/delivery node n of type T3, the configuration
 // p1 --> d1 --> n --> p2 --> d2 is acceptable, whereas any configurations
 // with p1 --> p2 --> d1 --> ..., or p1 --> n --> d1 --> ... is not feasible.
-class TypeIncompatibilityConstraint : public Constraint {
+//
+// It also verifies temporal type requirements.
+// In the above example, if T1 is a requirement for T2, p2 must be visited
+// between p1 and d1.
+class TypeRegulationsConstraint : public Constraint {
  public:
-  explicit TypeIncompatibilityConstraint(const RoutingModel& model);
+  explicit TypeRegulationsConstraint(const RoutingModel& model);
 
   void Post() override;
   void InitialPropagate() override;
 
  private:
-  void PropagateNodeIncompatibilities(int node);
-  void CheckIncompatibilitiesOnVehicle(int vehicle);
+  void PropagateNodeRegulations(int node);
+  void CheckRegulationsOnVehicle(int vehicle);
 
   const RoutingModel& model_;
-  const TypeIncompatibilityChecker incompatibility_checker_;
+  TypeIncompatibilityChecker incompatibility_checker_;
+  TypeRequirementChecker requirement_checker_;
   std::vector<Demon*> vehicle_demons_;
 };
 
@@ -1910,6 +2040,12 @@ class RoutingDimension {
   // [CumulVar(node) - delay, CumulVar(node) + node_visit_transits[node]).
   void SetBreakIntervalsOfVehicle(std::vector<IntervalVar*> breaks, int vehicle,
                                   std::vector<int64> node_visit_transits);
+  // With breaks supposed to be consecutive, this forces the distance between
+  // breaks of size at least minimum_break_duration to be at least distance.
+  // This supposes that the time until route start and after route end are
+  // infinite breaks.
+  void SetBreakDistanceDurationOfVehicle(int64 distance, int64 duration,
+                                         int vehicle);
 #if !defined(SWIGPYTHON)
   void SetBreakIntervalsOfVehicle(
       std::vector<IntervalVar*> breaks, int vehicle,
@@ -1917,11 +2053,19 @@ class RoutingDimension {
       std::function<int64(int64 from_index, int64 to_index)> group_delay);
   // Returns true if the vehicle has break intervals.
   bool VehicleHasBreakIntervals(int vehicle) const;
+  // Returns true iff some break distance constraint was set for this vehicle.
+  bool HasBreakDistanceDurationOfVehicle(int vehicle) const;
   // Returns the break intervals set by SetBreakIntervalsOfVehicle().
   const std::vector<IntervalVar*>& GetBreakIntervalsOfVehicle(
       int vehicle) const;
   // Returns the amount of visit transit set by SetBreakIntervalsOfVehicle().
   const std::vector<int64>& GetNodeVisitTransitsOfVehicle(int vehicle) const;
+  // Returns the pairs (distance, duration) specified by break distance
+  // constraints.
+  // clang-format off
+  const std::vector<std::pair<int64, int64> >&
+      GetBreakDistanceDurationOfVehicle(int vehicle) const;
+  // clang-format on
 #endif  // !defined(SWIGPYTHON)
 
   // Returns the parent in the dependency tree if any or nullptr otherwise.
@@ -2058,8 +2202,7 @@ class RoutingDimension {
   // Sets up the cost variables related to the global span and per-vehicle span
   // costs (only for the "slack" part of the latter).
   void SetupGlobalSpanCost(std::vector<IntVar*>* cost_elements) const;
-  void SetupSlackAndDependentTransitCosts(
-      std::vector<IntVar*>* cost_elements) const;
+  void SetupSlackAndDependentTransitCosts() const;
   // Finalize the model of the dimension.
   void CloseModel(bool use_light_propagation);
 
@@ -2114,6 +2257,8 @@ class RoutingDimension {
   std::vector<std::vector<int64> > vehicle_node_visit_transits_;
   std::vector<std::function<int64(int64 from_index, int64 to_index)> >
       vehicle_group_delays_;
+  std::vector<std::vector<std::pair<int64, int64> > >
+      vehicle_break_distance_duration_;
   // clang-format on
 
   std::vector<IntVar*> slacks_;
@@ -2952,7 +3097,7 @@ IntVarLocalSearchFilter* MakeNodeDisjunctionFilter(
 IntVarLocalSearchFilter* MakeVehicleAmortizedCostFilter(
     const RoutingModel& routing_model,
     Solver::ObjectiveWatcher objective_callback);
-IntVarLocalSearchFilter* MakeTypeIncompatibilityFilter(
+IntVarLocalSearchFilter* MakeTypeRegulationsFilter(
     const RoutingModel& routing_model);
 std::vector<IntVarLocalSearchFilter*> MakeCumulFilters(
     const RoutingDimension& dimension,
